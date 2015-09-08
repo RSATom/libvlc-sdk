@@ -155,8 +155,12 @@ typedef struct vlc_timer *vlc_timer_t;
 typedef pthread_t       vlc_thread_t;
 typedef pthread_mutex_t vlc_mutex_t;
 #define VLC_STATIC_MUTEX PTHREAD_MUTEX_INITIALIZER
-typedef pthread_cond_t  vlc_cond_t;
-#define VLC_STATIC_COND  PTHREAD_COND_INITIALIZER
+typedef struct
+{
+    pthread_cond_t cond;
+    unsigned clock;
+} vlc_cond_t;
+#define VLC_STATIC_COND  { PTHREAD_COND_INITIALIZER, 0 }
 typedef semaphore_t     vlc_sem_t;
 typedef pthread_rwlock_t vlc_rwlock_t;
 #define VLC_STATIC_RWLOCK PTHREAD_RWLOCK_INITIALIZER
@@ -382,12 +386,29 @@ struct vlc_cleanup_t
         vlc_cleanup_data.proc (vlc_cleanup_data.data); \
     } while (0)
 
-#endif /* !LIBVLC_USE_PTHREAD_CLEANUO */
+#endif /* !LIBVLC_USE_PTHREAD_CLEANUP */
 
 #ifndef LIBVLC_USE_PTHREAD_CANCEL
 /* poll() with cancellation */
 # ifdef __OS2__
-int vlc_poll (struct pollfd *fds, unsigned nfds, int timeout);
+static inline int vlc_poll (struct pollfd *fds, unsigned nfds, int timeout)
+{
+    static int (*vlc_poll_os2)(struct pollfd *, unsigned, int) = NULL;
+
+    if (!vlc_poll_os2)
+    {
+        HMODULE hmod;
+        CHAR szFailed[CCHMAXPATH];
+
+        if (DosLoadModule(szFailed, sizeof(szFailed), "vlccore", &hmod))
+            return -1;
+
+        if (DosQueryProcAddr(hmod, 0, "_vlc_poll_os2", (PFN *)&vlc_poll_os2))
+            return -1;
+    }
+
+    return (*vlc_poll_os2)(fds, nfds, timeout);
+}
 # else
 static inline int vlc_poll (struct pollfd *fds, unsigned nfds, int timeout)
 {

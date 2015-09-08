@@ -2,7 +2,7 @@
  * vlc_meta.h: Stream meta-data
  *****************************************************************************
  * Copyright (C) 2004 VLC authors and VideoLAN
- * $Id: db9f58af4b68976c9fd31aaa431b9ec52cd41717 $
+ * $Id: 4292095290d804f6e22303de88ecae86be983fc0 $
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *
@@ -45,14 +45,20 @@ typedef enum vlc_meta_type_t
     vlc_meta_URL,
     vlc_meta_Language,
     vlc_meta_NowPlaying,
+    vlc_meta_ESNowPlaying,
     vlc_meta_Publisher,
     vlc_meta_EncodedBy,
     vlc_meta_ArtworkURL,
     vlc_meta_TrackID,
-    vlc_meta_TrackTotal
+    vlc_meta_TrackTotal,
+    vlc_meta_Director,
+    vlc_meta_Season,
+    vlc_meta_Episode,
+    vlc_meta_ShowName,
+    vlc_meta_Actors,
 } vlc_meta_type_t;
 
-#define VLC_META_TYPE_COUNT 18
+#define VLC_META_TYPE_COUNT 24
 
 #define ITEM_PREPARSED       1
 #define ITEM_ARTURL_FETCHED  2
@@ -89,6 +95,7 @@ VLC_API void vlc_meta_SetStatus( vlc_meta_t *m, int status );
  */
 VLC_API const char * vlc_meta_TypeToLocalizedString( vlc_meta_type_t meta_type );
 
+/* deprecated (album-art variable) */
 enum {
     ALBUM_ART_WHEN_ASKED,
     ALBUM_ART_WHEN_PLAYED,
@@ -125,6 +132,12 @@ VLC_API int input_item_WriteMeta(vlc_object_t *, input_item_t *);
 #define vlc_meta_SetEncodedBy( meta, b )   vlc_meta_Set( meta, vlc_meta_EncodedBy, b )
 #define vlc_meta_SetArtURL( meta, b )      vlc_meta_Set( meta, vlc_meta_ArtworkURL, b )
 #define vlc_meta_SetTrackID( meta, b )     vlc_meta_Set( meta, vlc_meta_TrackID, b )
+#define vlc_meta_SetTrackTotal( meta, b )  vlc_meta_Set( meta, vlc_meta_TrackTotal, b )
+#define vlc_meta_SetDirector( meta, b )    vlc_meta_Set( meta, vlc_meta_Director, b )
+#define vlc_meta_SetSeason( meta, b )      vlc_meta_Set( meta, vlc_meta_Season, b )
+#define vlc_meta_SetEpisode( meta, b )     vlc_meta_Set( meta, vlc_meta_Episode, b )
+#define vlc_meta_SetShowName( meta, b )    vlc_meta_Set( meta, vlc_meta_ShowName, b )
+#define vlc_meta_SetActors( meta, b )      vlc_meta_Set( meta, vlc_meta_Actors, b )
 
 #define VLC_META_TITLE              vlc_meta_TypeToLocalizedString( vlc_meta_Title )
 #define VLC_META_ARTIST             vlc_meta_TypeToLocalizedString( vlc_meta_Artist )
@@ -143,6 +156,12 @@ VLC_API int input_item_WriteMeta(vlc_object_t *, input_item_t *);
 #define VLC_META_ENCODED_BY         vlc_meta_TypeToLocalizedString( vlc_meta_EncodedBy )
 #define VLC_META_ART_URL            vlc_meta_TypeToLocalizedString( vlc_meta_ArtworkURL )
 #define VLC_META_TRACKID            vlc_meta_TypeToLocalizedString( vlc_meta_TrackID )
+#define VLC_META_DIRECTOR           vlc_meta_TypeToLocalizedString( vlc_meta_Director )
+#define VLC_META_SEASON             vlc_meta_TypeToLocalizedString( vlc_meta_Season )
+#define VLC_META_EPISODE            vlc_meta_TypeToLocalizedString( vlc_meta_Episode )
+#define VLC_META_SHOW_NAME          vlc_meta_TypeToLocalizedString( vlc_meta_ShowName )
+#define VLC_META_ACTORS             vlc_meta_TypeToLocalizedString( vlc_meta_Actors )
 
+#define VLC_META_EXTRA_MB_ALBUMID   "MB_ALBUMID"
 
 #endif
