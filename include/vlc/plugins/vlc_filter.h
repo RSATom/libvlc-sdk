@@ -1,11 +1,11 @@
 /*****************************************************************************
  * vlc_filter.h: filter related structures and functions
  *****************************************************************************
- * Copyright (C) 1999-2008 VLC authors and VideoLAN
- * $Id: 320cbac3a4a5b8461ec41eabd77f323bbbc509dd $
+ * Copyright (C) 1999-2014 VLC authors and VideoLAN
  *
  * Authors: Gildas Bazin <gbazin@videolan.org>
  *          Antoine Cellerier <dionoea at videolan dot org>
+ *          Rémi Denis-Courmont
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by
@@ -31,11 +31,33 @@
 #include <vlc_mouse.h>
 
 /**
+ * \defgroup filter Filters
+ * \ingroup output
+ * Audio, video, text filters
+ * @{
  * \file
- * This file defines the structure and types used by video and audio filters
+ * Filter modules interface
  */
 
 typedef struct filter_owner_sys_t filter_owner_sys_t;
+
+typedef struct filter_owner_t
+{
+    void *sys;
+
+    union
+    {
+        struct
+        {
+            picture_t * (*buffer_new)( filter_t * );
+        } video;
+        struct
+        {
+            subpicture_t * (*buffer_new)( filter_t * );
+        } sub;
+    };
+} filter_owner_t;
+
 
 /** Structure describing a filter
  * @warning BIG FAT WARNING : the code relies on the first 4 members of
@@ -62,89 +84,68 @@ struct filter_t
 
     union
     {
-        struct
-        {
-            picture_t * (*pf_filter) ( filter_t *, picture_t * );
-            void        (*pf_flush)( filter_t * );
-            picture_t * (*pf_buffer_new) ( filter_t * );
-            void        (*pf_buffer_del) ( filter_t *, picture_t * );
-            /* Filter mouse state.
-             *
-             * If non-NULL, you must convert from output to input formats:
-             * - If VLC_SUCCESS is returned, the mouse state is propagated.
-             * - Otherwise, the mouse change is not propagated.
-             * If NULL, the mouse state is considered unchanged and will be
-             * propagated.
-             */
-            int         (*pf_mouse)( filter_t *, vlc_mouse_t *,
-                                     const vlc_mouse_t *p_old,
-                                     const vlc_mouse_t *p_new );
-        } video;
-#define pf_video_filter     u.video.pf_filter
-#define pf_video_flush      u.video.pf_flush
-#define pf_video_mouse      u.video.pf_mouse
-#define pf_video_buffer_new u.video.pf_buffer_new
-#define pf_video_buffer_del u.video.pf_buffer_del
+        /** Filter a picture (video filter) */
+        picture_t * (*pf_video_filter)( filter_t *, picture_t * );
 
-        struct
-        {
-            block_t *   (*pf_filter) ( filter_t *, block_t * );
-        } audio;
-#define pf_audio_filter     u.audio.pf_filter
+        /** Filter an audio block (audio filter) */
+        block_t * (*pf_audio_filter)( filter_t *, block_t * );
 
-        struct
-        {
-            void        (*pf_blend) ( filter_t *,  picture_t *,
-                                      const picture_t *, int, int, int );
-        } blend;
-#define pf_video_blend     u.blend.pf_blend
+        /** Blend a subpicture onto a picture (blend) */
+        void (*pf_video_blend)( filter_t *,  picture_t *, const picture_t *,
+                                 int, int, int );
 
-        struct
-        {
-            subpicture_t * (*pf_source)    ( filter_t *, mtime_t );
-            subpicture_t * (*pf_buffer_new)( filter_t * );
-            void           (*pf_buffer_del)( filter_t *, subpicture_t * );
-            int            (*pf_mouse)     ( filter_t *,
-                                             const vlc_mouse_t *p_old,
-                                             const vlc_mouse_t *p_new,
+        /** Generate a subpicture (sub source) */
+        subpicture_t *(*pf_sub_source)( filter_t *, mtime_t );
+
+        /** Filter a subpicture (sub filter) */
+        subpicture_t *(*pf_sub_filter)( filter_t *, subpicture_t * );
+
+        /** Render text (text render) */
+        int (*pf_render)( filter_t *, subpicture_region_t *,
+                          subpicture_region_t *, const vlc_fourcc_t * );
+    };
+
+    union
+    {
+        /* TODO: video filter drain */
+        /** Drain (audio filter) */
+        block_t *(*pf_audio_drain) ( filter_t * );
+    };
+
+    /** Flush
+     *
+     * Flush (i.e. discard) any internal buffer in a video or audio filter.
+     */
+    void (*pf_flush)( filter_t * );
+
+    union
+    {
+        /** Filter mouse state (video filter).
+         *
+         * If non-NULL, you must convert from output to input formats:
+         * - If VLC_SUCCESS is returned, the mouse state is propagated.
+         * - Otherwise, the mouse change is not propagated.
+         * If NULL, the mouse state is considered unchanged and will be
+         * propagated. */
+        int (*pf_video_mouse)( filter_t *, vlc_mouse_t *,
+                               const vlc_mouse_t *p_old,
+                               const vlc_mouse_t *p_new );
+        int (*pf_sub_mouse)( filter_t *, const vlc_mouse_t *p_old,
+                              const vlc_mouse_t *p_new,
                                              const video_format_t * );
-        } sub;
-#define pf_sub_source      u.sub.pf_source
-#define pf_sub_buffer_new  u.sub.pf_buffer_new
-#define pf_sub_buffer_del  u.sub.pf_buffer_del
-#define pf_sub_mouse       u.sub.pf_mouse
-
-        struct
-        {
-            subpicture_t * (*pf_filter) ( filter_t *, subpicture_t * );
-        } subf;
-#define pf_sub_filter      u.subf.pf_filter
-
-        struct
-        {
-            int         (*pf_text) ( filter_t *, subpicture_region_t *,
-                                     subpicture_region_t *,
-                                     const vlc_fourcc_t * );
-            int         (*pf_html) ( filter_t *, subpicture_region_t *,
-                                     subpicture_region_t *,
-                                     const vlc_fourcc_t * );
-        } render;
-#define pf_render_text     u.render.pf_text
-#define pf_render_html     u.render.pf_html
-
-    } u;
+    };
 
     /* Input attachments
      * XXX use filter_GetInputAttachments */
     int (*pf_get_attachments)( filter_t *, input_attachment_t ***, int * );
 
     /* Private structure for the owner of the decoder */
-    filter_owner_sys_t *p_owner;
+    filter_owner_t      owner;
 };
 
 /**
  * This function will return a new picture usable by p_filter as an output
- * buffer. You have to release it using filter_DeletePicture or by returning
+ * buffer. You have to release it using picture_Release or by returning
  * it to the caller as a pf_video_filter return value.
  * Provided for convenience.
  *
@@ -153,37 +154,38 @@ struct filter_t
  */
 static inline picture_t *filter_NewPicture( filter_t *p_filter )
 {
-    picture_t *p_picture = p_filter->pf_video_buffer_new( p_filter );
-    if( !p_picture )
+    picture_t *pic = p_filter->owner.video.buffer_new( p_filter );
+    if( pic == NULL )
         msg_Warn( p_filter, "can't get output picture" );
-    return p_picture;
+    return pic;
 }
 
 /**
- * This function will release a picture create by filter_NewPicture.
- * Provided for convenience.
+ * Flush a filter
  *
- * \param p_filter filter_t object
- * \param p_picture picture to be deleted
+ * This function will flush the state of a filter (audio or video).
  */
-static inline void filter_DeletePicture( filter_t *p_filter, picture_t *p_picture )
+static inline void filter_Flush( filter_t *p_filter )
 {
-    p_filter->pf_video_buffer_del( p_filter, p_picture );
+    if( p_filter->pf_flush != NULL )
+        p_filter->pf_flush( p_filter );
 }
 
 /**
- * This function will flush the state of a video filter.
+ * This function will drain, then flush an audio filter.
  */
-static inline void filter_FlushPictures( filter_t *p_filter )
+static inline block_t *filter_DrainAudio( filter_t *p_filter )
 {
-    if( p_filter->pf_video_flush )
-        p_filter->pf_video_flush( p_filter );
+    if( p_filter->pf_audio_drain )
+        return p_filter->pf_audio_drain( p_filter );
+    else
+        return NULL;
 }
 
 /**
  * This function will return a new subpicture usable by p_filter as an output
- * buffer. You have to release it using filter_DeleteSubpicture or by returning
- * it to the caller as a pf_sub_source return value.
+ * buffer. You have to release it using subpicture_Delete or by returning it to
+ * the caller as a pf_sub_source return value.
  * Provided for convenience.
  *
  * \param p_filter filter_t object
@@ -191,22 +193,10 @@ static inline void filter_FlushPictures( filter_t *p_filter )
  */
 static inline subpicture_t *filter_NewSubpicture( filter_t *p_filter )
 {
-    subpicture_t *p_subpicture = p_filter->pf_sub_buffer_new( p_filter );
-    if( !p_subpicture )
+    subpicture_t *subpic = p_filter->owner.sub.buffer_new( p_filter );
+    if( subpic == NULL )
         msg_Warn( p_filter, "can't get output subpicture" );
-    return p_subpicture;
-}
-
-/**
- * This function will release a subpicture create by filter_NewSubicture.
- * Provided for convenience.
- *
- * \param p_filter filter_t object
- * \param p_subpicture to be released
- */
-static inline void filter_DeleteSubpicture( filter_t *p_filter, subpicture_t *p_subpicture )
-{
-    p_filter->pf_sub_buffer_del( p_filter, p_subpicture );
+    return subpic;
 }
 
 /**
@@ -284,13 +274,25 @@ typedef struct filter_chain_t filter_chain_t;
  * \param p_object pointer to a vlc object
  * \param psz_capability vlc capability of filters in filter chain
  * \param b_allow_format_fmt_change allow changing of fmt
- * \param pf_buffer_allocation_init callback function to initialize buffer allocations
- * \param pf_buffer_allocation_clear callback function to clear buffer allocation initialization
- * \param p_buffer_allocation_data pointer to private allocation data
  * \return pointer to a filter chain
  */
-VLC_API filter_chain_t * filter_chain_New( vlc_object_t *, const char *, bool, int (*)( filter_t *, void * ), void (*)( filter_t * ), void *  ) VLC_USED;
-#define filter_chain_New( a, b, c, d, e, f ) filter_chain_New( VLC_OBJECT( a ), b, c, d, e, f )
+VLC_API filter_chain_t * filter_chain_New( vlc_object_t *, const char *, bool )
+VLC_USED;
+#define filter_chain_New( a, b, c ) filter_chain_New( VLC_OBJECT( a ), b, c )
+
+/**
+ * Creates a new video filter chain.
+ *
+ * \param obj pointer to parent VLC object
+ * \param change whether to allow changing the output format
+ * \param owner owner video buffer callbacks
+ * \return new filter chain, or NULL on error
+ */
+VLC_API filter_chain_t * filter_chain_NewVideo( vlc_object_t *obj, bool change,
+                                                const filter_owner_t *owner )
+VLC_USED;
+#define filter_chain_NewVideo( a, b, c ) \
+        filter_chain_NewVideo( VLC_OBJECT( a ), b, c )
 
 /**
  * Delete filter chain will delete all filters in the chain and free all
@@ -313,59 +315,60 @@ VLC_API void filter_chain_Reset( filter_chain_t *, const es_format_t *, const es
 /**
  * Append filter to the end of the chain.
  *
- * \param p_chain pointer to filter chain
- * \param psz_name name of filter
- * \param p_cfg
- * \param p_fmt_in input es_format_t
- * \param p_fmt_out output es_format_t
- * \return pointer to filter chain
+ * \param chain filter chain to append a filter to
+ * \param name filter name
+ * \param fmt_in filter input format
+ * \param fmt_out filter output format
+ * \return a pointer to the filter or NULL on error
  */
-VLC_API filter_t * filter_chain_AppendFilter( filter_chain_t *, const char *, config_chain_t *, const es_format_t *, const es_format_t * );
+VLC_API filter_t *filter_chain_AppendFilter(filter_chain_t *chain,
+    const char *name, config_chain_t *cfg, const es_format_t *fmt_in,
+    const es_format_t *fmt_out);
 
 /**
  * Append new filter to filter chain from string.
  *
- * \param p_chain pointer to filter chain
- * \param psz_string string of filters
- * \return 0 for success
+ * \param chain filter chain to append a filter to
+ * \param str filters chain nul-terminated string
  */
-VLC_API int filter_chain_AppendFromString( filter_chain_t *, const char * );
+VLC_API int filter_chain_AppendFromString(filter_chain_t *chain,
+                                          const char *str);
 
 /**
  * Delete filter from filter chain. This function also releases the filter
  * object and unloads the filter modules. The pointer to p_filter is no
  * longer valid after this function successfully returns.
  *
- * \param p_chain pointer to filter chain
- * \param p_filter pointer to filter object
- * \return VLC_SUCCESS on succes, else VLC_EGENERIC
+ * \param chain filter chain to remove the filter from
+ * \param filter filter to remove from the chain and delete
  */
-VLC_API int filter_chain_DeleteFilter( filter_chain_t *, filter_t * );
+VLC_API void filter_chain_DeleteFilter(filter_chain_t *chain,
+                                       filter_t *filter);
 
 /**
  * Get the number of filters in the filter chain.
  *
- * \param p_chain pointer to filter chain
+ * \param chain pointer to filter chain
  * \return number of filters in this filter chain
  */
-VLC_API int filter_chain_GetLength( filter_chain_t * );
+VLC_API int filter_chain_GetLength(filter_chain_t *chain);
 
 /**
- * Get last p_fmt_out in the chain.
+ * Get last output format of the last element in the filter chain.
  *
- * \param p_chain pointer to filter chain
- * \return last p_fmt (es_format_t) of this filter chain
+ * \param chain filter chain
  */
-VLC_API const es_format_t * filter_chain_GetFmtOut( filter_chain_t * );
+VLC_API const es_format_t *filter_chain_GetFmtOut(filter_chain_t *chain);
 
 /**
  * Apply the filter chain to a video picture.
  *
- * \param p_chain pointer to filter chain
- * \param p_picture picture to apply filters on
+ * \param chain pointer to filter chain
+ * \param pic picture to apply filters to
  * \return modified picture after applying all video filters
  */
-VLC_API picture_t * filter_chain_VideoFilter( filter_chain_t *, picture_t * );
+VLC_API picture_t *filter_chain_VideoFilter(filter_chain_t *chain,
+                                            picture_t *pic);
 
 /**
  * Flush a video filter chain.
@@ -374,29 +377,33 @@ VLC_API void filter_chain_VideoFlush( filter_chain_t * );
 
 /**
  * Apply the filter chain to a audio block.
+ * \bug Deal with block chains and document.
  *
- * \param p_chain pointer to filter chain
- * \param p_block audio frame to apply filters on
+ * \param chain pointer to filter chain
+ * \param block audio frame to apply filters on
  * \return modified audio frame after applying all audio filters
  */
-VLC_API block_t * filter_chain_AudioFilter( filter_chain_t *, block_t * );
+VLC_API block_t *filter_chain_AudioFilter(filter_chain_t *chain,
+                                          block_t *block);
 
 /**
- * Apply filter chain to subpictures.
+ * Generate subpictures from a chain of subpicture source "filters".
  *
- * \param p_chain pointer to filter chain
+ * \param chain filter chain
  * \param display_date of subpictures
  */
-VLC_API void filter_chain_SubSource( filter_chain_t *, mtime_t );
+void filter_chain_SubSource(filter_chain_t *chain, spu_t *,
+                            mtime_t display_date);
 
 /**
  * Apply filter chain to subpictures.
  *
- * \param p_chain pointer to filter chain
- * \param p_subpicture subpicture to apply filters on
+ * \param chain filter chain
+ * \param subpic subpicture to apply filters on
  * \return modified subpicture after applying all subpicture filters
  */
-VLC_API subpicture_t * filter_chain_SubFilter( filter_chain_t *, subpicture_t * );
+VLC_API subpicture_t *filter_chain_SubFilter(filter_chain_t *chain,
+                                             subpicture_t *subpic);
 
 /**
  * Apply the filter chain to a mouse state.
@@ -415,5 +422,8 @@ VLC_API int filter_chain_MouseFilter( filter_chain_t *, vlc_mouse_t *, const vlc
  */
 VLC_API int filter_chain_MouseEvent( filter_chain_t *, const vlc_mouse_t *, const video_format_t * );
 
-#endif /* _VLC_FILTER_H */
+int filter_chain_ForEach( filter_chain_t *chain,
+                          int (*cb)( filter_t *, void * ), void *opaque );
 
+/** @} */
+#endif /* _VLC_FILTER_H */

@@ -24,8 +24,11 @@
 #define VLC_AOUT_H 1
 
 /**
+ * \defgroup audio_output Audio output
+ * \ingroup output
+ * @{
  * \file
- * This file defines functions, structures and macros for audio output object
+ * Audio output modules interface
  */
 
 /* Buffers which arrive in advance of more than AOUT_MAX_ADVANCE_TIME
@@ -193,7 +196,7 @@ static const uint32_t pi_vlc_chan_order_wg4[] =
  */
 VLC_API unsigned aout_CheckChannelReorder( const uint32_t *, const uint32_t *,
                                            uint32_t mask, uint8_t *table );
-VLC_API void aout_ChannelReorder(void *, size_t, unsigned, const uint8_t *, vlc_fourcc_t);
+VLC_API void aout_ChannelReorder(void *, size_t, uint8_t, const uint8_t *, vlc_fourcc_t);
 
 VLC_API void aout_Interleave(void *dst, const void *const *planes,
                              unsigned samples, unsigned channels,
@@ -267,7 +270,7 @@ static inline void aout_MuteReport(audio_output_t *aout, bool mute)
 
 /**
  * Report audio policy status.
- * \parm cork true to request a cork, false to undo any pending cork.
+ * \param cork true to request a cork, false to undo any pending cork.
  */
 static inline void aout_PolicyReport(audio_output_t *aout, bool cork)
 {
@@ -333,7 +336,11 @@ VLC_API void aout_FiltersDelete(vlc_object_t *, aout_filters_t *);
         aout_FiltersDelete(VLC_OBJECT(o),f)
 VLC_API bool aout_FiltersAdjustResampling(aout_filters_t *, int);
 VLC_API block_t *aout_FiltersPlay(aout_filters_t *, block_t *, int rate);
+VLC_API block_t *aout_FiltersDrain(aout_filters_t *);
+VLC_API void     aout_FiltersFlush(aout_filters_t *);
 
 VLC_API vout_thread_t * aout_filter_RequestVout( filter_t *, vout_thread_t *p_vout, video_format_t *p_fmt );
+
+/** @} */
 
 #endif /* VLC_AOUT_H */

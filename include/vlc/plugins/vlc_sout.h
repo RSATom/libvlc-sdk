@@ -2,7 +2,7 @@
  * vlc_sout.h : stream output module
  *****************************************************************************
  * Copyright (C) 2002-2008 VLC authors and VideoLAN
- * $Id: b9366f790374562525f49d5449ec882fff348ddf $
+ * $Id: d18be89321e06e22f024fe1b0cf0200bb2c44ed4 $
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *          Laurent Aimar <fenrir@via.ecp.fr>
@@ -28,17 +28,20 @@
 #ifndef VLC_SOUT_H_
 #define VLC_SOUT_H_
 
-/**
- * \file
- * This file defines structures and functions for stream output in vlc
- */
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include <sys/types.h>
 #include <vlc_es.h>
+
+/**
+ * \defgroup sout Stream output
+ * \ingroup output
+ * @{
+ * \file
+ * Stream output modules interface
+ */
 
 /** Stream output instance (FIXME: should be private to src/ to avoid
  * invalid unsynchronized access) */
@@ -59,6 +62,12 @@ struct sout_instance_t
  * sout_stream_id_sys_t: opaque (private for all sout_stream_t)
  ****************************************************************************/
 typedef struct sout_stream_id_sys_t  sout_stream_id_sys_t;
+
+/**
+ * \defgroup sout_access Access output
+ * Raw output byte streams
+ * @{
+ */
 
 /** Stream output access_output */
 struct sout_access_out_t
@@ -101,6 +110,13 @@ static inline bool sout_AccessOutCanControlPace( sout_access_out_t *p_ao )
     return b;
 }
 
+/**
+ * @}
+ * \defgroup sout_mux Multiplexer
+ * Multiplexers (file formatters)
+ * @{
+ */
+
 /** Muxer structure */
 struct  sout_mux_t
 {
@@ -115,7 +131,7 @@ struct  sout_mux_t
     sout_access_out_t   *p_access;
 
     int                 (*pf_addstream)( sout_mux_t *, sout_input_t * );
-    int                 (*pf_delstream)( sout_mux_t *, sout_input_t * );
+    void                (*pf_delstream)( sout_mux_t *, sout_input_t * );
     int                 (*pf_mux)      ( sout_mux_t * );
     int                 (*pf_control)  ( sout_mux_t *, int, va_list );
 
@@ -131,7 +147,7 @@ struct  sout_mux_t
      *  for stream then we refuse all stream and start muxing */
     bool  b_add_stream_any_time;
     bool  b_waiting_stream;
-    /* we wait one second after first stream added */
+    /* we wait 1.5 second after first stream added */
     mtime_t     i_add_stream_start;
 };
 
@@ -146,19 +162,19 @@ enum sout_mux_query_e
 
 struct sout_input_t
 {
-    es_format_t     *p_fmt;
-    block_fifo_t    *p_fifo;
-
-    void            *p_sys;
+    const es_format_t *p_fmt;
+    block_fifo_t      *p_fifo;
+    void              *p_sys;
+    es_format_t        fmt;
 };
 
 
 VLC_API sout_mux_t * sout_MuxNew( sout_instance_t*, const char *, sout_access_out_t * ) VLC_USED;
-VLC_API sout_input_t * sout_MuxAddStream( sout_mux_t *, es_format_t * ) VLC_USED;
+VLC_API sout_input_t *sout_MuxAddStream( sout_mux_t *, const es_format_t * ) VLC_USED;
 VLC_API void sout_MuxDeleteStream( sout_mux_t *, sout_input_t * );
 VLC_API void sout_MuxDelete( sout_mux_t * );
 VLC_API int sout_MuxSendBuffer( sout_mux_t *, sout_input_t  *, block_t * );
-VLC_API int sout_MuxGetStream(sout_mux_t *, int , mtime_t *);
+VLC_API int sout_MuxGetStream(sout_mux_t *, unsigned, mtime_t *);
 
 static inline int sout_MuxControl( sout_mux_t *p_mux, int i_query, ... )
 {
@@ -171,9 +187,8 @@ static inline int sout_MuxControl( sout_mux_t *p_mux, int i_query, ... )
     return i_result;
 }
 
-/****************************************************************************
- * sout_stream:
- ****************************************************************************/
+/** @} */
+
 struct sout_stream_t
 {
     VLC_COMMON_MEMBERS
@@ -182,12 +197,12 @@ struct sout_stream_t
     sout_instance_t   *p_sout;
 
     char              *psz_name;
-    config_chain_t        *p_cfg;
+    config_chain_t    *p_cfg;
     sout_stream_t     *p_next;
 
     /* add, remove a stream */
-    sout_stream_id_sys_t *(*pf_add)( sout_stream_t *, es_format_t * );
-    int               (*pf_del)( sout_stream_t *, sout_stream_id_sys_t * );
+    sout_stream_id_sys_t *(*pf_add)( sout_stream_t *, const es_format_t * );
+    void              (*pf_del)( sout_stream_t *, sout_stream_id_sys_t * );
     /* manage a packet */
     int               (*pf_send)( sout_stream_t *, sout_stream_id_sys_t *, block_t* );
 
@@ -197,17 +212,22 @@ struct sout_stream_t
 
 VLC_API void sout_StreamChainDelete(sout_stream_t *p_first, sout_stream_t *p_last );
 VLC_API sout_stream_t *sout_StreamChainNew(sout_instance_t *p_sout,
-        char *psz_chain, sout_stream_t *p_next, sout_stream_t **p_last) VLC_USED;
+        const char *psz_chain, sout_stream_t *p_next, sout_stream_t **p_last) VLC_USED;
 
-static inline sout_stream_id_sys_t *sout_StreamIdAdd( sout_stream_t *s, es_format_t *fmt )
+static inline sout_stream_id_sys_t *sout_StreamIdAdd( sout_stream_t *s,
+                                                      const es_format_t *fmt )
 {
     return s->pf_add( s, fmt );
 }
-static inline int sout_StreamIdDel( sout_stream_t *s, sout_stream_id_sys_t *id )
+
+static inline void sout_StreamIdDel( sout_stream_t *s,
+                                     sout_stream_id_sys_t *id )
 {
-    return s->pf_del( s, id );
+    s->pf_del( s, id );
 }
-static inline int sout_StreamIdSend( sout_stream_t *s, sout_stream_id_sys_t *id, block_t *b )
+
+static inline int sout_StreamIdSend( sout_stream_t *s,
+                                     sout_stream_id_sys_t *id, block_t *b )
 {
     return s->pf_send( s, id, b );
 }
@@ -223,7 +243,7 @@ VLC_API encoder_t * sout_EncoderCreate( vlc_object_t *obj );
  * Announce handler
  ****************************************************************************/
 VLC_API session_descriptor_t* sout_AnnounceRegisterSDP( vlc_object_t *, const char *, const char * ) VLC_USED;
-VLC_API int sout_AnnounceUnRegister(vlc_object_t *,session_descriptor_t* );
+VLC_API void sout_AnnounceUnRegister(vlc_object_t *,session_descriptor_t* );
 #define sout_AnnounceRegisterSDP(o, sdp, addr) \
         sout_AnnounceRegisterSDP(VLC_OBJECT (o), sdp, addr)
 #define sout_AnnounceUnRegister(o, a) \
@@ -244,6 +264,8 @@ typedef struct sout_description_data_t
     es_format_t **es;
     vlc_sem_t *sem;
 } sout_description_data_t;
+
+/** @} */
 
 #ifdef __cplusplus
 }

@@ -2,7 +2,7 @@
  * vlc_block_helper.h: Helper functions for data blocks management.
  *****************************************************************************
  * Copyright (C) 2003 VLC authors and VideoLAN
- * $Id: fdd5fdbeafee1f296c157410ef3e69a7cf57d3e5 $
+ * $Id: 4414307503689e171746cf88ab549d01511f9db4 $
  *
  * Authors: Gildas Bazin <gbazin@netcourrier.com>
  *
@@ -105,7 +105,7 @@ static inline block_t *block_BytestreamPop( block_bytestream_t *p_bytestream )
     block_BytestreamFlush( p_bytestream );
 
     p_block = p_bytestream->p_block;
-    if( p_block == NULL )
+    if( unlikely( p_block == NULL ) )
     {
         return NULL;
     }
@@ -131,7 +131,7 @@ static inline block_t *block_BytestreamPop( block_bytestream_t *p_bytestream )
 static inline int block_SkipByte( block_bytestream_t *p_bytestream )
 {
     /* Most common case first */
-    if( p_bytestream->p_block->i_buffer - p_bytestream->i_offset )
+    if( likely( p_bytestream->p_block->i_buffer - p_bytestream->i_offset ) )
     {
         p_bytestream->i_offset++;
         return VLC_SUCCESS;
@@ -161,7 +161,7 @@ static inline int block_PeekByte( block_bytestream_t *p_bytestream,
                                   uint8_t *p_data )
 {
     /* Most common case first */
-    if( p_bytestream->p_block->i_buffer - p_bytestream->i_offset )
+    if( likely( p_bytestream->p_block->i_buffer - p_bytestream->i_offset ) )
     {
         *p_data = p_bytestream->p_block->p_buffer[p_bytestream->i_offset];
         return VLC_SUCCESS;
@@ -190,7 +190,7 @@ static inline int block_GetByte( block_bytestream_t *p_bytestream,
                                  uint8_t *p_data )
 {
     /* Most common case first */
-    if( p_bytestream->p_block->i_buffer - p_bytestream->i_offset )
+    if( likely( p_bytestream->p_block->i_buffer - p_bytestream->i_offset ) )
     {
         *p_data = p_bytestream->p_block->p_buffer[p_bytestream->i_offset];
         p_bytestream->i_offset++;
@@ -227,7 +227,6 @@ static inline int block_WaitBytes( block_bytestream_t *p_bytestream,
     /* Check we have that much data */
     i_offset = p_bytestream->i_offset;
     i_size = i_data;
-    i_copy = 0;
     for( p_block = p_bytestream->p_block;
          p_block != NULL; p_block = p_block->p_next )
     {
@@ -286,7 +285,6 @@ static inline int block_PeekBytes( block_bytestream_t *p_bytestream,
     /* Check we have that much data */
     i_offset = p_bytestream->i_offset;
     i_size = i_data;
-    i_copy = 0;
     for( p_block = p_bytestream->p_block;
          p_block != NULL; p_block = p_block->p_next )
     {
@@ -306,7 +304,6 @@ static inline int block_PeekBytes( block_bytestream_t *p_bytestream,
     /* Copy the data */
     i_offset = p_bytestream->i_offset;
     i_size = i_data;
-    i_copy = 0;
     for( p_block = p_bytestream->p_block;
          p_block != NULL; p_block = p_block->p_next )
     {
@@ -336,7 +333,6 @@ static inline int block_GetBytes( block_bytestream_t *p_bytestream,
     /* Check we have that much data */
     i_offset = p_bytestream->i_offset;
     i_size = i_data;
-    i_copy = 0;
     for( p_block = p_bytestream->p_block;
          p_block != NULL; p_block = p_block->p_next )
     {
@@ -389,7 +385,6 @@ static inline int block_PeekOffsetBytes( block_bytestream_t *p_bytestream,
     /* Check we have that much data */
     i_offset = p_bytestream->i_offset;
     i_size = i_data + i_peek_offset;
-    i_copy = 0;
     for( p_block = p_bytestream->p_block;
          p_block != NULL; p_block = p_block->p_next )
     {
@@ -424,7 +419,6 @@ static inline int block_PeekOffsetBytes( block_bytestream_t *p_bytestream,
     /* Copy the data */
     i_offset += i_copy;
     i_size = i_data;
-    i_copy = 0;
     for( ; p_block != NULL; p_block = p_block->p_next )
     {
         i_copy = __MIN( i_size, p_block->i_buffer - i_offset );
@@ -462,7 +456,7 @@ static inline int block_FindStartcodeFromOffset(
         if( i_size < 0 ) break;
     }
 
-    if( i_size >= 0 )
+    if( unlikely( i_size >= 0 ) )
     {
         /* Not enough data, bail out */
         return VLC_EGENERIC;

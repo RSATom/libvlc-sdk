@@ -2,7 +2,7 @@
  * vlc_subpicture.h: subpicture definitions
  *****************************************************************************
  * Copyright (C) 1999 - 2009 VLC authors and VideoLAN
- * $Id: 6bfede171002b78b80c7635e87fdd51ea7d15ea4 $
+ * $Id: e17d0317d3068e791ea054f4b41e13c944d8a142 $
  *
  * Authors: Vincent Seguin <seguin@via.ecp.fr>
  *          Samuel Hocevar <sam@via.ecp.fr>
@@ -27,19 +27,19 @@
 #define VLC_SUBPICTURE_H 1
 
 /**
- * \file
- * This file defines subpicture structures and functions in vlc
  */
 
 #include <vlc_picture.h>
 #include <vlc_text_style.h>
 
 /**
- * \defgroup subpicture Video Subpictures
+ * \defgroup subpicture Video sub-pictures
+ * \ingroup video_output
  * Subpictures are pictures that should be displayed on top of the video, like
  * subtitles and OSD
- * \ingroup video_output
  * @{
+ * \file
+ * Subpictures functions
  */
 
 /**
@@ -64,21 +64,20 @@ struct subpicture_region_t
     int             i_align;                  /**< alignment within a region */
     int             i_alpha;                               /**< transparency */
 
-    char            *psz_text;       /**< text string comprising this region */
-    char            *psz_html;       /**< HTML version of subtitle (NULL = use psz_text) */
-    text_style_t    *p_style;        /**< a description of the text style formatting */
-    bool            b_renderbg;      /**< render black background under text */
+    text_segment_t  *p_text;         /**< subtitle text, made of a list of segments */
+    bool            b_noregionbg;    /**< render background under text only */
+    bool            b_gridmode;      /** if the decoder sends row/cols based output */
 
     subpicture_region_t *p_next;                /**< next region in the list */
     subpicture_region_private_t *p_private;  /**< Private data for spu_t *only* */
 };
 
 /* Subpicture region position flags */
-#define SUBPICTURE_ALIGN_LEFT 0x1
-#define SUBPICTURE_ALIGN_RIGHT 0x2
-#define SUBPICTURE_ALIGN_TOP 0x4
-#define SUBPICTURE_ALIGN_BOTTOM 0x8
-#define SUBPICTURE_ALIGN_LEAVETEXT 0x10 /**< Align the subpicture, but not the text inside */
+#define SUBPICTURE_ALIGN_LEFT       0x1
+#define SUBPICTURE_ALIGN_RIGHT      0x2
+#define SUBPICTURE_ALIGN_TOP        0x4
+#define SUBPICTURE_ALIGN_BOTTOM     0x8
+#define SUBPICTURE_ALIGN_LEAVETEXT  0x10 /**< Align the subpicture, but not the text inside */
 #define SUBPICTURE_ALIGN_MASK ( SUBPICTURE_ALIGN_LEFT|SUBPICTURE_ALIGN_RIGHT| \
                                 SUBPICTURE_ALIGN_TOP |SUBPICTURE_ALIGN_BOTTOM| \
                                 SUBPICTURE_ALIGN_LEAVETEXT )
@@ -104,6 +103,14 @@ VLC_API void subpicture_region_Delete( subpicture_region_t *p_region );
  * Provided for convenience.
  */
 VLC_API void subpicture_region_ChainDelete( subpicture_region_t *p_head );
+
+/**
+ * This function will copy a subpicture region to a new allocated one
+ * and transfer all the properties
+ *
+ * Provided for convenience.
+ */
+VLC_API subpicture_region_t *subpicture_region_Copy( subpicture_region_t *p_region );
 
 /**
  *
@@ -202,6 +209,18 @@ VLC_API subpicture_t * subpicture_NewFromPicture( vlc_object_t *, picture_t *, v
  * a non NULL subpicture_updater_t.
  */
 VLC_API void subpicture_Update( subpicture_t *, const video_format_t *src, const video_format_t *, mtime_t );
+
+/**
+ * This function will blend a given subpicture onto a picture.
+ *
+ * The subpicture and all its region must:
+ *  - be absolute.
+ *  - not be ephemere.
+ *  - not have the fade flag.
+ *  - contains only picture (no text rendering).
+ * \return the number of region(s) succesfully blent
+ */
+VLC_API unsigned picture_BlendSubpicture( picture_t *, filter_t *p_blend, subpicture_t * );
 
 /**@}*/
 

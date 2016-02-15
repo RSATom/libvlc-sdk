@@ -3,7 +3,7 @@
  * Interface used to send events.
  *****************************************************************************
  * Copyright (C) 2007 VLC authors and VideoLAN
- * $Id: c3425102b47c0ed953b527412521d1c8698b083e $
+ * $Id: bca1b2a9e17344188ff1679fb24d0f3446a16396 $
  *
  * Authors: Pierre d'Herbemont
  *
@@ -123,6 +123,7 @@ typedef enum vlc_event_type_t {
     vlc_InputItemNameChanged,
     vlc_InputItemInfoChanged,
     vlc_InputItemErrorWhenReadingChanged,
+    vlc_InputItemPreparseEnded,
 
     /* Service Discovery event */
     vlc_ServicesDiscoveryItemAdded,

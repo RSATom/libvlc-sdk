@@ -2,7 +2,7 @@
  * vlc_demux.h: Demuxer descriptor, queries and methods
  *****************************************************************************
  * Copyright (C) 1999-2005 VLC authors and VideoLAN
- * $Id: 0dcee0dffe2ac9dafdc9fe8fd5fa363a64cb85e1 $
+ * $Id: 45f54160ddd922163d69cdb01685e595b05ed1ac $
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *
@@ -24,18 +24,20 @@
 #ifndef VLC_DEMUX_H
 #define VLC_DEMUX_H 1
 
-/**
- * \file
- * This files defines functions and structures used by demux objects in vlc
- */
+#include <stdlib.h>
+#include <string.h>
 
 #include <vlc_es.h>
 #include <vlc_stream.h>
 #include <vlc_es_out.h>
 
 /**
- * \defgroup demux Demux
+ * \defgroup demux Demultiplexer
+ * \ingroup input
+ * Demultiplexers (file format parsers)
  * @{
+ * \file
+ * Demultiplexer modules interface
  */
 
 struct demux_t
@@ -77,6 +79,11 @@ struct demux_t
     input_thread_t *p_input;
 };
 
+/* pf_demux return values */
+#define VLC_DEMUXER_EOF       0
+#define VLC_DEMUXER_EGENERIC -1
+#define VLC_DEMUXER_SUCCESS   1
+
 /* demux_t.info.i_update field */
 #define INPUT_UPDATE_TITLE      0x0010
 #define INPUT_UPDATE_SEEKPOINT  0x0020
@@ -87,7 +94,6 @@ struct demux_t
 typedef struct demux_meta_t
 {
     VLC_COMMON_MEMBERS
-    demux_t *p_demux; /** FIXME: use stream_t instead? */
     input_item_t *p_item; /***< the input item that is being read */
 
     vlc_meta_t *p_meta;                 /**< meta data */
@@ -96,11 +102,94 @@ typedef struct demux_meta_t
     input_attachment_t **attachments;    /**< array of attachments */
 } demux_meta_t;
 
+/**
+ * Control query identifiers for use with demux_t.pf_control
+ *
+ * In the individual identifier description, the input stream refers to
+ * demux_t.s if non-NULL, and the output refers to demux_t.out.
+ *
+ * A demuxer is synchronous if it only accesses its input stream and the
+ * output from within its demux_t callbacks, i.e. demux.pf_demux and
+ * demux_t.pf_control.
+ *
+ * A demuxer is threaded if it accesses either or both input and output
+ * asynchronously.
+ *
+ * An access-demuxer is a demuxer without input, i.e. demux_t.s == NULL).
+ */
 enum demux_query_e
 {
+    /** Checks whether the stream supports seeking.
+     * Can fail if seeking is not supported (same as returning false).
+     * \bug Failing should not be allowed.
+     *
+     * arg1 = bool * */
+    DEMUX_CAN_SEEK,
+
+    /** Checks whether (long) pause then stream resumption is supported.
+     * Can fail only if synchronous and <b>not</b> an access-demuxer. The
+     * underlying input stream then determines if pause is supported.
+     * \bug Failing should not be allowed.
+     *
+     * arg1= bool * */
+    DEMUX_CAN_PAUSE = 0x002,
+
+    /** Whether the stream can be read at an arbitrary pace.
+     * Cannot fail.
+     *
+     * arg1= bool * */
+    DEMUX_CAN_CONTROL_PACE,
+
+    /** Retrieves the PTS delay (roughly the default buffer duration).
+     * Can fail only if synchronous and <b>not</b> an access-demuxer. The
+     * underlying input stream then determines the PTS delay.
+     *
+     * arg1= int64_t * */
+    DEMUX_GET_PTS_DELAY = 0x101,
+
+    /** Retrieves stream meta-data.
+     * Should fail if no meta-data were retrieved.
+     *
+     * arg1= vlc_meta_t * */
+    DEMUX_GET_META = 0x105,
+
+    /** Retrieves an estimate of signal quality and strength.
+     * Can fail.
+     *
+     * arg1=double *quality, arg2=double *strength */
+    DEMUX_GET_SIGNAL = 0x107,
+
+    /** Sets the paused or playing/resumed state.
+     *
+     * Streams are initially in playing state. The control always specifies a
+     * change from paused to playing (false) or from playing to paused (true)
+     * and streams are initially playing; a no-op cannot be requested.
+     *
+     * The control is never used if DEMUX_CAN_PAUSE fails.
+     * Can fail.
+     *
+     * arg1= bool */
+    DEMUX_SET_PAUSE_STATE = 0x200,
+
+    /** Seeks to the beginning of a title.
+     *
+     * The control is never used if DEMUX_GET_TITLE_INFO fails.
+     * Can fail.
+     *
+     * arg1= int */
+    DEMUX_SET_TITLE,
+
+    /** Seeks to the beginning of a chapter of the current title.
+     *
+     * The control is never used if DEMUX_GET_TITLE_INFO fails.
+     * Can fail.
+     *
+     * arg1= int */
+    DEMUX_SET_SEEKPOINT,        /* arg1= int            can fail */
+
     /* I. Common queries to access_demux and demux */
     /* POSITION double between 0.0 and 1.0 */
-    DEMUX_GET_POSITION,         /* arg1= double *       res=    */
+    DEMUX_GET_POSITION = 0x300, /* arg1= double *       res=    */
     DEMUX_SET_POSITION,         /* arg1= double arg2= bool b_precise    res=can fail    */
 
     /* LENGTH/TIME in microsecond, 0 if unknown */
@@ -108,12 +197,16 @@ enum demux_query_e
     DEMUX_GET_TIME,             /* arg1= int64_t *      res=    */
     DEMUX_SET_TIME,             /* arg1= int64_t arg2= bool b_precise   res=can fail    */
 
-    /* TITLE_INFO only if more than 1 title or 1 chapter */
-    DEMUX_GET_TITLE_INFO,       /* arg1=input_title_t*** arg2=int*
-                                   arg3=int*pi_title_offset(0), arg4=int*pi_seekpoint_offset(0) can fail */
-    /* TITLE/SEEKPOINT, only when TITLE_INFO succeed */
-    DEMUX_SET_TITLE,            /* arg1= int            can fail */
-    DEMUX_SET_SEEKPOINT,        /* arg1= int            can fail */
+    /**
+     * \todo Document
+     *
+     * \warning The prototype is different from STREAM_GET_TITLE_INFO
+     *
+     * Can fail, meaning there is only one title and one chapter.
+     *
+     * arg1= input_title_t ***, arg2=int *, arg3=int *pi_title_offset(0),
+     * arg4= int *pi_seekpoint_offset(0) */
+    DEMUX_GET_TITLE_INFO,
 
     /* DEMUX_SET_GROUP/SET_ES only a hint for demuxer (mainly DVB) to allow not
      * reading everything (you should not use this to call es_out_Control)
@@ -132,7 +225,6 @@ enum demux_query_e
     DEMUX_GET_FPS,              /* arg1= double *       res=can fail    */
 
     /* Meta data */
-    DEMUX_GET_META,             /* arg1= vlc_meta_t **  res=can fail    */
     DEMUX_HAS_UNSUPPORTED_META, /* arg1= bool *   res can fail    */
 
     /* Attachments */
@@ -142,21 +234,18 @@ enum demux_query_e
      * you should accept it only if the stream can be recorded without
      * any modification or header addition. */
     DEMUX_CAN_RECORD,           /* arg1=bool*   res=can fail(assume false) */
-    DEMUX_SET_RECORD_STATE,     /* arg1=bool    res=can fail */
-
-    DEMUX_GET_SIGNAL, /* arg1=double *pf_quality, arg2=double *pf_strength
-                         res=can fail */
+    /**
+     * \todo Document
+     *
+     * \warning The prototype is different from STREAM_SET_RECORD_STATE
+     *
+     * The control is never used if DEMUX_CAN_RECORD fails or returns false.
+     * Can fail.
+     *
+     * arg1= bool */
+    DEMUX_SET_RECORD_STATE,
 
     /* II. Specific access_demux queries */
-    /* PAUSE you are ensured that it is never called twice with the same state */
-    DEMUX_CAN_PAUSE = 0x1000,   /* arg1= bool*    can fail (assume false)*/
-    DEMUX_SET_PAUSE_STATE,      /* arg1= bool     can fail */
-
-    DEMUX_GET_PTS_DELAY,        /* arg1= int64_t*       cannot fail */
-
-    /* DEMUX_CAN_CONTROL_PACE returns true (*pb_pace) if we can read the
-     * data at our pace */
-    DEMUX_CAN_CONTROL_PACE,     /* arg1= bool*pb_pace    can fail (assume false) */
 
     /* DEMUX_CAN_CONTROL_RATE is called only if DEMUX_CAN_CONTROL_PACE has returned false.
      * *pb_rate should be true when the rate can be changed (using DEMUX_SET_RATE)
@@ -166,17 +255,69 @@ enum demux_query_e
      * It should return the value really used in *pi_rate */
     DEMUX_SET_RATE,             /* arg1= int*pi_rate                                        can fail */
 
-    DEMUX_CAN_SEEK,            /* arg1= bool*    can fail (assume false)*/
+    /** Checks whether the stream is actually a playlist, rather than a real
+     * stream.
+     *
+     * \warning The prototype is different from STREAM_IS_DIRECTORY.
+     *
+     * Can fail if the stream is not a playlist (same as returning false).
+     *
+     * arg1= bool * */
+    DEMUX_IS_PLAYLIST,
 
-    /* Navigation */
-    DEMUX_NAV_ACTIVATE,        /* res=can fail */
-    DEMUX_NAV_UP,              /* res=can fail */
-    DEMUX_NAV_DOWN,            /* res=can fail */
-    DEMUX_NAV_LEFT,            /* res=can fail */
-    DEMUX_NAV_RIGHT,           /* res=can fail */
+    /* Menu (VCD/DVD/BD) Navigation */
+    /** Activate the navigation item selected. Can fail */
+    DEMUX_NAV_ACTIVATE,
+    /** Use the up arrow to select a navigation item above. Can fail */
+    DEMUX_NAV_UP,
+    /** Use the down arrow to select a navigation item under. Can fail */
+    DEMUX_NAV_DOWN,
+    /** Use the left arrow to select a navigation item on the left. Can fail */
+    DEMUX_NAV_LEFT,
+    /** Use the right arrow to select a navigation item on the right. Can fail */
+    DEMUX_NAV_RIGHT,
+    /** Activate the popup Menu (for BD). Can fail */
+    DEMUX_NAV_POPUP,
 };
 
-VLC_API int demux_vaControlHelper( stream_t *, int64_t i_start, int64_t i_end, int64_t i_bitrate, int i_align, int i_query, va_list args );
+/*************************************************************************
+ * Main Demux
+ *************************************************************************/
+
+/* stream_t *s could be null and then it mean a access+demux in one */
+VLC_API demux_t *demux_New( vlc_object_t *p_obj, const char *psz_name,
+                            const char *psz_path, stream_t *s, es_out_t *out );
+
+VLC_API void demux_Delete( demux_t * );
+
+
+VLC_API int demux_vaControlHelper( stream_t *, int64_t i_start, int64_t i_end,
+                                   int64_t i_bitrate, int i_align, int i_query, va_list args );
+
+VLC_USED static inline int demux_Demux( demux_t *p_demux )
+{
+    if( !p_demux->pf_demux )
+        return 1;
+
+    return p_demux->pf_demux( p_demux );
+}
+
+VLC_API int demux_vaControl( demux_t *p_demux, int i_query, va_list args );
+
+static inline int demux_Control( demux_t *p_demux, int i_query, ... )
+{
+    va_list args;
+    int     i_result;
+
+    va_start( args, i_query );
+    i_result = demux_vaControl( p_demux, i_query, args );
+    va_end( args );
+    return i_result;
+}
+
+/*************************************************************************
+ * Miscellaneous helpers for demuxers
+ *************************************************************************/
 
 static inline void demux_UpdateTitleFromStream( demux_t *demux )
 {
@@ -198,10 +339,6 @@ static inline void demux_UpdateTitleFromStream( demux_t *demux )
     }
 }
 
-/*************************************************************************
- * Miscellaneous helpers for demuxers
- *************************************************************************/
-
 VLC_USED
 static inline bool demux_IsPathExtension( demux_t *p_demux, const char *psz_extension )
 {
@@ -211,6 +348,21 @@ static inline bool demux_IsPathExtension( demux_t *p_demux, const char *psz_exte
     if( !psz_ext || strcasecmp( psz_ext, psz_extension ) )
         return false;
     return true;
+}
+
+VLC_USED
+static inline bool demux_IsContentType(demux_t *demux, const char *type)
+{
+    char *mime = stream_ContentType(demux->s);
+    if (mime == NULL)
+        return false;
+
+    size_t len = strlen(type);
+    bool ok = strncasecmp(mime, type, len) == 0
+           && memchr("\t ;", (unsigned char)mime[len], 4) != NULL;
+
+    free(mime);
+    return ok;
 }
 
 VLC_USED
@@ -234,12 +386,6 @@ VLC_API decoder_t * demux_PacketizerNew( demux_t *p_demux, es_format_t *p_fmt, c
  * This function will destroy a packetizer create by demux_PacketizerNew.
  */
 VLC_API void demux_PacketizerDestroy( decoder_t *p_packetizer );
-
-/**
- * This function will return the parent input of this demux.
- * It is retained. Can return NULL.
- */
-VLC_API input_thread_t * demux_GetParentInput( demux_t *p_demux ) VLC_USED;
 
 /* */
 #define DEMUX_INIT_COMMON() do {            \

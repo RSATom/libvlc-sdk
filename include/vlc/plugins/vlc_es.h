@@ -2,7 +2,7 @@
  * vlc_es.h: Elementary stream formats descriptions
  *****************************************************************************
  * Copyright (C) 1999-2012 VLC authors and VideoLAN
- * $Id: 8db588494350b40b0f9225df00234f44189c5072 $
+ * $Id: 97cdb788938e9ba62baaddb402a3186535781632 $
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *
@@ -24,6 +24,7 @@
 #ifndef VLC_ES_H
 #define VLC_ES_H 1
 
+#include <vlc_common.h>
 #include <vlc_fourcc.h>
 #include <vlc_text_style.h>
 
@@ -213,7 +214,7 @@ struct video_format_t
     unsigned int i_frame_rate;                     /**< frame rate numerator */
     unsigned int i_frame_rate_base;              /**< frame rate denominator */
 
-    uint32_t i_rmask, i_gmask, i_bmask;          /**< color masks for RGB chroma */
+    uint32_t i_rmask, i_gmask, i_bmask;      /**< color masks for RGB chroma */
     int i_rrshift, i_lrshift;
     int i_rgshift, i_lgshift;
     int i_rbshift, i_lbshift;
@@ -399,9 +400,9 @@ struct es_format_t
                                          when no other stream
                                     >=0: priority */
 
-    char            *psz_language;        /**< human readible language name */
-    char            *psz_description;     /**< human readible description of language */
-    int             i_extra_languages;    /**< length in bytes of extra language data pointer */
+    char            *psz_language;        /**< human-readable language name */
+    char            *psz_description;     /**< human-readable description of language */
+    unsigned        i_extra_languages;    /**< length in bytes of extra language data pointer */
     extra_languages_t *p_extra_languages; /**< extra language data needed by some decoders */
 
     audio_format_t  audio;    /**< description of audio format */

@@ -112,12 +112,16 @@
 
 /* Branch prediction */
 #ifdef __GNUC__
-#   define likely(p)   __builtin_expect(!!(p), 1)
-#   define unlikely(p) __builtin_expect(!!(p), 0)
+# define likely(p)     __builtin_expect(!!(p), 1)
+# define unlikely(p)   __builtin_expect(!!(p), 0)
+# define unreachable() __builtin_unreachable()
 #else
-#   define likely(p)   (!!(p))
-#   define unlikely(p) (!!(p))
+# define likely(p)     (!!(p))
+# define unlikely(p)   (!!(p))
+# define unreachable() ((void)0)
 #endif
+
+#define vlc_assert_unreachable() (assert(!"unreachable"), unreachable())
 
 /* Linkage */
 #ifdef __cplusplus
@@ -187,9 +191,6 @@ static inline void vlc_fourcc_to_char( vlc_fourcc_t fcc, char *psz_fourcc )
     memcpy( psz_fourcc, &fcc, 4 );
 }
 
-#define vlc_fourcc_to_char( a, b ) \
-        vlc_fourcc_to_char( (vlc_fourcc_t)(a), (char *)(b) )
-
 /*****************************************************************************
  * Classes declaration
  *****************************************************************************/
@@ -201,20 +202,6 @@ typedef struct libvlc_int_t libvlc_int_t;
 typedef struct date_t date_t;
 
 /* Playlist */
-
-/* FIXME */
-/**
- * Playlist commands
- */
-typedef enum {
-    PLAYLIST_PLAY,      /**< No arg.                            res=can fail*/
-    PLAYLIST_VIEWPLAY,  /**< arg1= playlist_item_t*,*/
-                        /**  arg2 = playlist_item_t*          , res=can fail */
-    PLAYLIST_PAUSE,     /**< No arg                             res=can fail*/
-    PLAYLIST_STOP,      /**< No arg                             res=can fail*/
-    PLAYLIST_SKIP,      /**< arg1=int,                          res=can fail*/
-} playlist_command_t;
-
 
 typedef struct playlist_t playlist_t;
 typedef struct playlist_item_t playlist_item_t;
@@ -304,7 +291,6 @@ typedef struct filter_t filter_t;
 typedef struct filter_sys_t filter_sys_t;
 
 /* Network */
-typedef struct virtual_socket_t v_socket_t;
 typedef struct vlc_url_t vlc_url_t;
 
 /* Misc */
@@ -350,9 +336,7 @@ typedef union
     float           f_float;
     char *          psz_string;
     void *          p_address;
-    vlc_object_t *  p_object;
     vlc_list_t *    p_list;
-    mtime_t         i_time;
     struct { int32_t x; int32_t y; } coords;
 
 } vlc_value_t;
@@ -362,10 +346,9 @@ typedef union
  */
 struct vlc_list_t
 {
-    int             i_count;
-    vlc_value_t *   p_values;
-    int *           pi_types;
-
+    int          i_type;
+    int          i_count;
+    vlc_value_t *p_values;
 };
 
 /*****************************************************************************
@@ -382,13 +365,22 @@ struct vlc_list_t
 #define VLC_ENOITEM        (-8) /**< Item not found */
 
 /*****************************************************************************
- * Variable callbacks
+ * Variable callbacks: called when the value is modified
  *****************************************************************************/
 typedef int ( * vlc_callback_t ) ( vlc_object_t *,      /* variable's object */
                                    char const *,            /* variable name */
                                    vlc_value_t,                 /* old value */
                                    vlc_value_t,                 /* new value */
                                    void * );                /* callback data */
+
+/*****************************************************************************
+ * List callbacks: called when elements are added/removed from the list
+ *****************************************************************************/
+typedef int ( * vlc_list_callback_t ) ( vlc_object_t *,      /* variable's object */
+                                        char const *,            /* variable name */
+                                        int,                  /* VLC_VAR_* action */
+                                        vlc_value_t *,      /* new/deleted value  */
+                                        void *);                 /* callback data */
 
 /*****************************************************************************
  * OS-specific headers and thread types
@@ -401,8 +393,9 @@ typedef int ( * vlc_callback_t ) ( vlc_object_t *,      /* variable's object */
 #   include <windows.h>
 #endif
 
-#ifdef __SYMBIAN32__
- #include <sys/syslimits.h>
+#ifdef __APPLE__
+#include <sys/syslimits.h>
+#include <AvailabilityMacros.h>
 #endif
 
 #ifdef __OS2__
@@ -549,6 +542,23 @@ static inline unsigned popcount (unsigned x)
     return __builtin_popcount (x);
 #else
     unsigned count = 0;
+    while (x)
+    {
+        count += x & 1;
+        x = x >> 1;
+    }
+    return count;
+#endif
+}
+
+/** Bit weight of long long */
+VLC_USED
+static inline int popcountll(unsigned long long x)
+{
+#if VLC_GCC_VERSION(3,4)
+    return __builtin_popcountll(x);
+#else
+    int count = 0;
     while (x)
     {
         count += x & 1;
@@ -801,9 +811,6 @@ static inline void SetQWLE (void *p, uint64_t qw)
 VLC_API bool vlc_ureduce( unsigned *, unsigned *, uint64_t, uint64_t, uint64_t );
 
 /* Aligned memory allocator */
-#ifdef __APPLE__
-#include <AvailabilityMacros.h>
-#endif
 
 #ifdef __MINGW32__
 # define vlc_memalign(align, size) (__mingw_aligned_malloc(size, align))
@@ -811,26 +818,6 @@ VLC_API bool vlc_ureduce( unsigned *, unsigned *, uint64_t, uint64_t, uint64_t )
 #elif defined(_MSC_VER)
 # define vlc_memalign(align, size) (_aligned_malloc(size, align))
 # define vlc_free(base)            (_aligned_free(base))
-#elif defined(__APPLE__) && !defined(MAC_OS_X_VERSION_10_6)
-static inline void *vlc_memalign(size_t align, size_t size)
-{
-    long diff;
-    void *ptr;
-
-    ptr = malloc(size+align);
-    if(!ptr)
-        return ptr;
-    diff = ((-(long)ptr - 1)&(align-1)) + 1;
-    ptr  = (char*)ptr + diff;
-    ((char*)ptr)[-1]= diff;
-    return ptr;
-}
-
-static void vlc_free(void *ptr)
-{
-    if (ptr)
-        free((char*)ptr - ((char*)ptr)[-1]);
-}
 #else
 static inline void *vlc_memalign(size_t align, size_t size)
 {
@@ -911,7 +898,7 @@ VLC_API const char * VLC_Compiler( void ) VLC_USED;
 #include "vlc_main.h"
 #include "vlc_configuration.h"
 
-#if defined( _WIN32 ) || defined( __SYMBIAN32__ ) || defined( __OS2__ )
+#if defined( _WIN32 ) || defined( __OS2__ )
 #   define DIR_SEP_CHAR '\\'
 #   define DIR_SEP "\\"
 #   define PATH_SEP_CHAR ';'

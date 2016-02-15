@@ -2,7 +2,7 @@
  * vlc_image.h : wrapper for image reading/writing facilities
  *****************************************************************************
  * Copyright (C) 2004 VLC authors and VideoLAN
- * $Id: 52bce1f24495ffdbadfb6d0aef0953577992b9a2 $
+ * $Id: 0b9ab9e8cef3db324733b6059650d38d238a6b11 $
  *
  * Authors: Gildas Bazin <gbazin@videolan.org>
  *
@@ -24,12 +24,12 @@
 #ifndef VLC_IMAGE_H
 #define VLC_IMAGE_H 1
 
+# include <vlc_picture.h>
+
 /**
  * \file
  * This file defines functions and structures for image conversions in vlc
  */
-
-#include <vlc_vout.h>
 
 # ifdef __cplusplus
 extern "C" {
@@ -49,8 +49,6 @@ struct image_handler_t
 
     picture_t * (*pf_convert)   ( image_handler_t *, picture_t *,
                                   video_format_t *, video_format_t * );
-    picture_t * (*pf_filter)    ( image_handler_t *, picture_t *,
-                                  video_format_t *, const char * );
 
     /* Private properties */
     vlc_object_t *p_parent;
@@ -68,7 +66,6 @@ VLC_API void image_HandlerDelete( image_handler_t * );
 #define image_Write( a, b, c, d ) a->pf_write( a, b, c, d )
 #define image_WriteUrl( a, b, c, d, e ) a->pf_write_url( a, b, c, d, e )
 #define image_Convert( a, b, c, d ) a->pf_convert( a, b, c, d )
-#define image_Filter( a, b, c, d ) a->pf_filter( a, b, c, d )
 
 VLC_API vlc_fourcc_t image_Type2Fourcc( const char *psz_name );
 VLC_API vlc_fourcc_t image_Ext2Fourcc( const char *psz_name );

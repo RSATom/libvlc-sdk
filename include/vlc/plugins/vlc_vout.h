@@ -2,7 +2,7 @@
  * vlc_vout.h: common video definitions
  *****************************************************************************
  * Copyright (C) 1999 - 2008 VLC authors and VideoLAN
- * $Id: b39e49b564e8367df07a2a85ee8bddfac6b548c4 $
+ * $Id: 600cb5632dd890e5aa745429b3142d08f0acc160 $
  *
  * Authors: Vincent Seguin <seguin@via.ecp.fr>
  *          Samuel Hocevar <sam@via.ecp.fr>
@@ -26,25 +26,22 @@
 #ifndef VLC_VOUT_H_
 #define VLC_VOUT_H_ 1
 
-/**
- * \file
- * This file defines common video output structures and functions in vlc
- */
-
+#include <vlc_es.h>
 #include <vlc_picture.h>
-#include <vlc_filter.h>
 #include <vlc_subpicture.h>
 
-/*****************************************************************************
- * Prototypes
- *****************************************************************************/
-
 /**
- * \defgroup video_output Video Output
+ * \defgroup output Output
+ * \defgroup video_output Video output
+ * \ingroup output
+ * Video rendering, output and window management
+ *
  * This module describes the programming interface for video output threads.
  * It includes functions allowing to open a new thread, send pictures to a
  * thread, and destroy a previously opened video output thread.
  * @{
+ * \file
+ * Video output thread interface
  */
 
 /**
@@ -151,9 +148,6 @@ VLC_API void vout_ChangeAspectRatio( vout_thread_t *p_vout,
 /* */
 VLC_API picture_t * vout_GetPicture( vout_thread_t * );
 VLC_API void vout_PutPicture( vout_thread_t *, picture_t * );
-
-VLC_API void vout_HoldPicture( vout_thread_t *, picture_t * );
-VLC_API void vout_ReleasePicture( vout_thread_t *, picture_t * );
 
 /* */
 VLC_API void vout_PutSubpicture( vout_thread_t *, subpicture_t * );

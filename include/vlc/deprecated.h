@@ -2,7 +2,7 @@
  * deprecated.h:  libvlc deprecated API
  *****************************************************************************
  * Copyright (C) 1998-2008 VLC authors and VideoLAN
- * $Id: 7f55090fcd482489ceed9145ce2253e78fa6fd2a $
+ * $Id: fdda1e21bed9d1c86acd824b44faf56d6acb9b99 $
  *
  * Authors: Clément Stenac <zorglub@videolan.org>
  *          Jean-Paul Saman <jpsaman@videolan.org>
@@ -25,22 +25,16 @@
 #ifndef LIBVLC_DEPRECATED_H
 #define LIBVLC_DEPRECATED_H 1
 
-/**
- * \file
- * This file defines libvlc deprecated API
- */
-
 # ifdef __cplusplus
 extern "C" {
 # endif
 
-/*****************************************************************************
- * Playlist (Deprecated)
- *****************************************************************************/
 /** \defgroup libvlc_playlist LibVLC playlist (legacy)
  * \ingroup libvlc
  * @deprecated Use @ref libvlc_media_list instead.
  * @{
+ * \file
+ * LibVLC deprecated playlist API
  */
 
 /**

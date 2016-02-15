@@ -2,7 +2,7 @@
  * vlc_block.h: Data blocks management functions
  *****************************************************************************
  * Copyright (C) 2003 VLC authors and VideoLAN
- * $Id: 75f98ff4bd59bf3dad9356f9e84ebe53942efe69 $
+ * $Id: 908d2c461851baa53e7932c790deac27c57e9b03 $
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *
@@ -51,7 +51,8 @@
  *   optimised for preheader/postdatas increase)
  ****************************************************************************/
 
-/** The content doesn't follow the last block, or is probably broken */
+/** The content doesn't follow the last block, possible some blocks in between
+ *  have been lost */
 #define BLOCK_FLAG_DISCONTINUITY 0x0001
 /** Intra frame */
 #define BLOCK_FLAG_TYPE_I        0x0002
@@ -137,6 +138,7 @@ struct block_t
  ****************************************************************************/
 VLC_API void block_Init( block_t *, void *, size_t );
 VLC_API block_t *block_Alloc( size_t ) VLC_USED VLC_MALLOC;
+block_t *block_TryRealloc(block_t *, ssize_t pre, size_t body) VLC_USED;
 VLC_API block_t *block_Realloc( block_t *, ssize_t i_pre, size_t i_body ) VLC_USED;
 
 static inline void block_CopyProperties( block_t *dst, block_t *src )
@@ -278,6 +280,8 @@ static inline block_t *block_ChainGather( block_t *p_list )
     block_ChainProperties( p_list, NULL, &i_total, &i_length );
 
     g = block_Alloc( i_total );
+    if( !g )
+        return NULL;
     block_ChainExtract( p_list, g->p_buffer, g->i_buffer );
 
     g->i_flags = p_list->i_flags;
@@ -295,7 +299,6 @@ static inline block_t *block_ChainGather( block_t *p_list )
  ****************************************************************************
  * - block_FifoNew : create and init a new fifo
  * - block_FifoRelease : destroy a fifo and free all blocks in it.
- * - block_FifoPace : wait for a fifo to drain to a specified number of packets or total data size
  * - block_FifoEmpty : free all blocks in a fifo
  * - block_FifoPut : put a block
  * - block_FifoGet : get a packet from the fifo (and wait if it is empty)
@@ -309,13 +312,36 @@ static inline block_t *block_ChainGather( block_t *p_list )
 
 VLC_API block_fifo_t *block_FifoNew( void ) VLC_USED VLC_MALLOC;
 VLC_API void block_FifoRelease( block_fifo_t * );
-VLC_API void block_FifoPace( block_fifo_t *fifo, size_t max_depth, size_t max_size );
 VLC_API void block_FifoEmpty( block_fifo_t * );
-VLC_API size_t block_FifoPut( block_fifo_t *, block_t * );
-VLC_API void block_FifoWake( block_fifo_t * );
+VLC_API void block_FifoPut( block_fifo_t *, block_t * );
 VLC_API block_t * block_FifoGet( block_fifo_t * ) VLC_USED;
 VLC_API block_t * block_FifoShow( block_fifo_t * );
-size_t block_FifoSize( const block_fifo_t *p_fifo ) VLC_USED;
-VLC_API size_t block_FifoCount( const block_fifo_t *p_fifo ) VLC_USED;
+size_t block_FifoSize(block_fifo_t *) VLC_USED;
+VLC_API size_t block_FifoCount(block_fifo_t *) VLC_USED;
+
+typedef struct block_fifo_t vlc_fifo_t;
+
+VLC_API void vlc_fifo_Lock(vlc_fifo_t *);
+VLC_API void vlc_fifo_Unlock(vlc_fifo_t *);
+VLC_API void vlc_fifo_Signal(vlc_fifo_t *);
+VLC_API void vlc_fifo_Wait(vlc_fifo_t *);
+VLC_API void vlc_fifo_WaitCond(vlc_fifo_t *, vlc_cond_t *);
+int vlc_fifo_TimedWaitCond(vlc_fifo_t *, vlc_cond_t *, mtime_t);
+VLC_API void vlc_fifo_QueueUnlocked(vlc_fifo_t *, block_t *);
+VLC_API block_t *vlc_fifo_DequeueUnlocked(vlc_fifo_t *) VLC_USED;
+VLC_API block_t *vlc_fifo_DequeueAllUnlocked(vlc_fifo_t *) VLC_USED;
+VLC_API size_t vlc_fifo_GetCount(const vlc_fifo_t *) VLC_USED;
+VLC_API size_t vlc_fifo_GetBytes(const vlc_fifo_t *) VLC_USED;
+
+VLC_USED static inline bool vlc_fifo_IsEmpty(const vlc_fifo_t *fifo)
+{
+    return vlc_fifo_GetCount(fifo) == 0;
+}
+
+static inline void vlc_fifo_Cleanup(void *fifo)
+{
+    vlc_fifo_Unlock((vlc_fifo_t *)fifo);
+}
+#define vlc_fifo_CleanupPush(fifo) vlc_cleanup_push(vlc_fifo_Cleanup, fifo)
 
 #endif /* VLC_BLOCK_H */

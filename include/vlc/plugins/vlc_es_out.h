@@ -2,7 +2,7 @@
  * vlc_es_out.h: es_out (demuxer output) descriptor, queries and methods
  *****************************************************************************
  * Copyright (C) 1999-2004 VLC authors and VideoLAN
- * $Id: cf1abcec08467eb495ad62474e055c1500f358b6 $
+ * $Id: 58059f270326a355cacdb364c1b1968f208de9b9 $
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *
@@ -25,13 +25,12 @@
 #define VLC_ES_OUT_H 1
 
 /**
- * \file
- * This file defines functions and structures for handling es_out in stream output
- */
-
-/**
- * \defgroup es out Es Out
+ * \defgroup es_out ES output
+ * \ingroup input
+ * Elementary streams output
  * @{
+ * \file
+ * Elementary streams output interface
  */
 
 enum es_out_query_e

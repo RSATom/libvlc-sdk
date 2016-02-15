@@ -2,7 +2,7 @@
  * vlc_codec.h: Definition of the decoder and encoder structures
  *****************************************************************************
  * Copyright (C) 1999-2003 VLC authors and VideoLAN
- * $Id: 1e7c8a6f160cd27fc3123abf64c62a52b62f5111 $
+ * $Id: 9927ec1fdc6504db4bda0d73a4bfb61ac65183d1 $
  *
  * Authors: Gildas Bazin <gbazin@netcourrier.com>
  *
@@ -30,19 +30,18 @@
 #include <vlc_subpicture.h>
 
 /**
+ * \defgroup codec Codec
+ * Decoders and encoders
+ * @{
  * \file
- * This file defines the structure and types used by decoders and encoders
+ * Decoder and encoder modules interface
+ *
+ * \defgroup decoder Decoder
+ * Audio, video and text decoders
+ * @{
  */
 
 typedef struct decoder_owner_sys_t decoder_owner_sys_t;
-
-/**
- * \defgroup decoder Decoder
- *
- * The structure describing a decoder
- *
- * @{
- */
 
 /*
  * BIG FAT WARNING : the code relies in the first 4 members of filter_t
@@ -63,17 +62,15 @@ struct decoder_t
     /* Output format of decoder/packetizer */
     es_format_t         fmt_out;
 
-    /* Some decoders only accept packetized data (ie. not truncated) */
-    bool                b_need_packetized;
-
     /* Tell the decoder if it is allowed to drop frames */
-    bool                b_pace_control;
+    bool                b_frame_drop_allowed;
 
     /* */
     picture_t *         ( * pf_decode_video )( decoder_t *, block_t ** );
     block_t *           ( * pf_decode_audio )( decoder_t *, block_t ** );
     subpicture_t *      ( * pf_decode_sub)   ( decoder_t *, block_t ** );
     block_t *           ( * pf_packetize )   ( decoder_t *, block_t ** );
+    void                ( * pf_flush ) ( decoder_t * );
 
     /* Closed Caption (CEA 608/708) extraction.
      * If set, it *may* be called after pf_decode_video/pf_packetize
@@ -95,12 +92,9 @@ struct decoder_t
      */
 
     /* Video output callbacks
-     * XXX use decoder_NewPicture/decoder_DeletePicture
-     * and decoder_LinkPicture/decoder_UnlinkPicture */
+     * XXX use decoder_NewPicture */
+    int             (*pf_vout_format_update)( decoder_t * );
     picture_t      *(*pf_vout_buffer_new)( decoder_t * );
-    void            (*pf_vout_buffer_del)( decoder_t *, picture_t * );
-    void            (*pf_picture_link)   ( decoder_t *, picture_t * );
-    void            (*pf_picture_unlink) ( decoder_t *, picture_t * );
 
     /**
      * Number of extra (ie in addition to the DPB) picture buffers
@@ -112,9 +106,8 @@ struct decoder_t
     int             (*pf_aout_format_update)( decoder_t * );
 
     /* SPU output callbacks
-     * XXX use decoder_NewSubpicture and decoder_DeleteSubpicture */
+     * XXX use decoder_NewSubpicture */
     subpicture_t   *(*pf_spu_buffer_new)( decoder_t *, const subpicture_updater_t * );
-    void            (*pf_spu_buffer_del)( decoder_t *, subpicture_t * );
 
     /* Input attachments
      * XXX use decoder_GetInputAttachments */
@@ -128,6 +121,13 @@ struct decoder_t
      * XXX use decoder_GetDisplayRate */
     int             (*pf_get_display_rate)( decoder_t * );
 
+    /* XXX use decoder_QueueVideo */
+    int             (*pf_queue_video)( decoder_t *, picture_t * );
+    /* XXX use decoder_QueueAudio */
+    int             (*pf_queue_audio)( decoder_t *, block_t * );
+    /* XXX use decoder_QueueSub */
+    int             (*pf_queue_sub)( decoder_t *, subpicture_t *);
+
     /* Private structure for the owner of the decoder */
     decoder_owner_sys_t *p_owner;
 
@@ -140,9 +140,7 @@ struct decoder_t
 
 /**
  * \defgroup encoder Encoder
- *
- * The structure describing a Encoder
- *
+ * Audio, video and text encoders
  * @{
  */
 
@@ -176,32 +174,134 @@ struct encoder_t
 
 /**
  * @}
+ *
+ * \ingroup decoder
+ * @{
  */
-
 
 /**
- * This function will return a new picture usable by a decoder as an output
- * buffer. You have to release it using decoder_DeletePicture or by returning
- * it to the caller as a pf_decode_video return value.
+ * Updates the video output format.
+ *
+ * This function notifies the video output pipeline of a new video output
+ * format (fmt_out.video). If there was no video output from the decoder so far
+ * or if the video output format has changed, a new video output will be set
+ * up. decoder_GetPicture() can then be used to allocate picture buffers.
+ *
+ * If the format is unchanged, this function has no effects and returns zero.
+ *
+ * \note
+ * This function is not reentrant.
+ *
+ * @return 0 if the video output was set up succesfully, -1 otherwise.
  */
-VLC_API picture_t * decoder_NewPicture( decoder_t * ) VLC_USED;
+static inline int decoder_UpdateVideoFormat( decoder_t *dec )
+{
+    if( dec->pf_vout_format_update != NULL )
+        return dec->pf_vout_format_update( dec );
+    else
+        return -1;
+}
 
 /**
- * This function will release a picture create by decoder_NewPicture.
+ * Allocates an output picture buffer.
+ *
+ * This function pulls an output picture buffer for the decoder from the
+ * buffer pool of the video output. The picture must be released with
+ * picture_Release() when it is no longer referenced by the decoder.
+ *
+ * \note
+ * This function is reentrant. However, decoder_UpdateVideoFormat() cannot be
+ * used concurrently; the caller is responsible for serialization.
+ *
+ * \warning
+ * The behaviour is undefined if decoder_UpdateVideoFormat() was not called or
+ * if the last call returned an error.
+ *
+ * \return a picture buffer on success, NULL on error
  */
-VLC_API void decoder_DeletePicture( decoder_t *, picture_t *p_picture );
+VLC_USED
+static inline picture_t *decoder_GetPicture( decoder_t *dec )
+{
+    return dec->pf_vout_buffer_new( dec );
+}
 
 /**
- * This function will increase the picture reference count.
- * (picture_Hold is not usable.)
+ * Checks the format and allocates a picture buffer.
+ *
+ * This common helper function sets the output video output format and
+ * allocates a picture buffer in that format. The picture must be released with
+ * picture_Release() when it is no longer referenced by the decoder.
+ *
+ * \note
+ * Lile decoder_UpdateVideoFormat(), this function is not reentrant.
+ *
+ * \return a picture buffer on success, NULL on error
  */
-VLC_API void decoder_LinkPicture( decoder_t *, picture_t * );
+VLC_USED
+static inline picture_t *decoder_NewPicture( decoder_t *dec )
+{
+    if( decoder_UpdateVideoFormat(dec) )
+        return NULL;
+    return decoder_GetPicture( dec );
+}
 
 /**
- * This function will decrease the picture reference count.
- * (picture_Release is not usable.)
+ * This function queues a picture to the video output.
+ *
+ * \note
+ * The caller doesn't own the picture anymore after this call (even in case of
+ * error).
+ * FIXME: input_DecoderFrameNext won't work if a module use this function.
+ *
+ * \return 0 if the picture is queued, -1 on error
  */
-VLC_API void decoder_UnlinkPicture( decoder_t *, picture_t * );
+static inline int decoder_QueueVideo( decoder_t *dec, picture_t *p_pic )
+{
+    if( !dec->pf_queue_video )
+    {
+        picture_Release( p_pic );
+        return -1;
+    }
+    return dec->pf_queue_video( dec, p_pic );
+}
+
+/**
+ * This function queues an audio block to the audio output.
+ *
+ * \note
+ * The caller doesn't own the audio block anymore after this call (even in case
+ * of error).
+ *
+ * \return 0 if the block is queued, -1 on error
+ */
+static inline int decoder_QueueAudio( decoder_t *dec, block_t *p_aout_buf )
+{
+    if( !dec->pf_queue_audio )
+    {
+        block_Release( p_aout_buf );
+        return -1;
+    }
+    return dec->pf_queue_audio( dec, p_aout_buf );
+}
+
+/**
+ * This function queues a subtitle to the video output.
+ *
+ * \note
+ * The caller doesn't own the subtitle anymore after this call (even in case of
+ * error).
+ *
+ * \return 0 if the subtitle is queued, -1 on error
+ */
+static inline int decoder_QueueSub( decoder_t *dec, subpicture_t *p_spu )
+{
+    if( !dec->pf_queue_sub )
+    {
+        subpicture_Delete( p_spu );
+        return -1;
+    }
+    return dec->pf_queue_sub( dec, p_spu );
+}
 
 /**
  * This function notifies the audio output pipeline of a new audio output
@@ -218,22 +318,17 @@ static inline int decoder_UpdateAudioFormat( decoder_t *dec )
 
 /**
  * This function will return a new audio buffer usable by a decoder as an
- * output buffer. You have to release it using decoder_DeleteAudioBuffer
- * or by returning it to the caller as a pf_decode_audio return value.
+ * output buffer. It must be released with block_Release() or returned it to
+ * the caller as a pf_decode_audio return value.
  */
 VLC_API block_t * decoder_NewAudioBuffer( decoder_t *, int i_size ) VLC_USED;
 
 /**
  * This function will return a new subpicture usable by a decoder as an output
- * buffer. You have to release it using decoder_DeleteSubpicture or by returning
+ * buffer. You have to release it using subpicture_Delete() or by returning
  * it to the caller as a pf_decode_sub return value.
  */
 VLC_API subpicture_t * decoder_NewSubpicture( decoder_t *, const subpicture_updater_t * ) VLC_USED;
-
-/**
- * This function will release a subpicture created by decoder_NewSubicture.
- */
-VLC_API void decoder_DeleteSubpicture( decoder_t *, subpicture_t *p_subpicture );
 
 /**
  * This function gives all input attachments at once.
@@ -255,4 +350,6 @@ VLC_API mtime_t decoder_GetDisplayDate( decoder_t *, mtime_t ) VLC_USED;
  */
 VLC_API int decoder_GetDisplayRate( decoder_t * ) VLC_USED;
 
+/** @} */
+/** @} */
 #endif /* _VLC_CODEC_H */

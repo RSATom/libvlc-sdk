@@ -2,7 +2,7 @@
  * vlc_stream.h: Stream (between access and demux) descriptor and methods
  *****************************************************************************
  * Copyright (C) 1999-2004 VLC authors and VideoLAN
- * $Id: 10a98ef2811fdfddb4b934c04806fea6813aaab5 $
+ * $Id: d7834870129cebeef1ed98f19322ad6edb865d48 $
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *
@@ -26,24 +26,18 @@
 
 #include <vlc_block.h>
 
-/**
- * \file
- * This file defines structures and functions for stream (between access and demux) descriptor in vlc
- */
-
 # ifdef __cplusplus
 extern "C" {
 # endif
 
 /**
  * \defgroup stream Stream
- *
- *  This will allow you to easily handle read/seek in demuxer modules.
+ * \ingroup input
+ * Buffered input byte streams
  * @{
+ * \file
+ * Byte streams and byte stream filter modules interface
  */
-
-/* Opaque definition for text reader context */
-typedef struct stream_text_t stream_text_t;
 
 /**
  * stream_t definition
@@ -52,31 +46,23 @@ typedef struct stream_text_t stream_text_t;
 struct stream_t
 {
     VLC_COMMON_MEMBERS
-    bool        b_error;
 
     /* Module properties for stream filter */
     module_t    *p_module;
 
-    char        *psz_access;
-    /* Real or virtual path (it can only be changed during stream_t opening) */
-    char        *psz_path;
+    char        *psz_url;
 
     /* Stream source for stream filter */
     stream_t *p_source;
 
     /* */
-    int      (*pf_read)   ( stream_t *, void *p_read, unsigned int i_read );
-    int      (*pf_peek)   ( stream_t *, const uint8_t **pp_peek, unsigned int i_peek );
-    int      (*pf_control)( stream_t *, int i_query, va_list );
-
-    /* */
-    void     (*pf_destroy)( stream_t *);
+    ssize_t     (*pf_read)(stream_t *, void *, size_t);
+    input_item_t *(*pf_readdir)( stream_t * );
+    int         (*pf_seek)(stream_t *, uint64_t);
+    int         (*pf_control)( stream_t *, int i_query, va_list );
 
     /* Private data for module */
     stream_sys_t *p_sys;
-
-    /* Text reader state */
-    stream_text_t *p_text;
 
     /* Weak link to parent input */
     input_thread_t *p_input;
@@ -92,23 +78,16 @@ enum stream_query_e
     STREAM_CAN_FASTSEEK,        /**< arg1= bool *   res=cannot fail*/
     STREAM_CAN_PAUSE,           /**< arg1= bool *   res=cannot fail*/
     STREAM_CAN_CONTROL_PACE,    /**< arg1= bool *   res=cannot fail*/
-
     /* */
-    STREAM_SET_POSITION,        /**< arg1= uint64_t       res=can fail  */
-    STREAM_GET_POSITION,        /**< arg1= uint64_t *     res=cannot fail*/
-
-    STREAM_GET_SIZE,            /**< arg1= uint64_t *     res=cannot fail (0 if no sense)*/
-
-    /* You should update size of source if any and then update size 
-     * FIXME find a way to avoid it */
-    STREAM_UPDATE_SIZE,
+    STREAM_GET_SIZE=6,          /**< arg1= uint64_t *     res=can fail */
+    STREAM_IS_DIRECTORY,        /**< arg1= bool *, arg2= bool *, res=can fail*/
 
     /* */
     STREAM_GET_PTS_DELAY = 0x101,/**< arg1= int64_t* res=cannot fail */
     STREAM_GET_TITLE_INFO, /**< arg1=input_title_t*** arg2=int* res=can fail */
     STREAM_GET_TITLE,       /**< arg1=unsigned * res=can fail */
     STREAM_GET_SEEKPOINT,   /**< arg1=unsigned * res=can fail */
-    STREAM_GET_META,        /**< arg1= vlc_meta_t **       res=can fail */
+    STREAM_GET_META,        /**< arg1= vlc_meta_t *       res=can fail */
     STREAM_GET_CONTENT_TYPE,    /**< arg1= char **         res=can fail */
     STREAM_GET_SIGNAL,      /**< arg1=double *pf_quality, arg2=double *pf_strength   res=can fail */
 
@@ -122,44 +101,86 @@ enum stream_query_e
     STREAM_SET_PRIVATE_ID_STATE = 0x1000, /* arg1= int i_private_data, bool b_selected    res=can fail */
     STREAM_SET_PRIVATE_ID_CA,             /* arg1= int i_program_number, uint16_t i_vpid, uint16_t i_apid1, uint16_t i_apid2, uint16_t i_apid3, uint8_t i_length, uint8_t *p_data */
     STREAM_GET_PRIVATE_ID_STATE,          /* arg1=int i_private_data arg2=bool *          res=can fail */
+    STREAM_GET_PRIVATE_BLOCK, /**< arg1= block_t **b, arg2=bool *eof */
 };
 
-VLC_API int stream_Read( stream_t *s, void *p_read, int i_read );
-VLC_API int stream_Peek( stream_t *s, const uint8_t **pp_peek, int i_peek );
+/**
+ * Reads data from a byte stream.
+ *
+ * This function always waits for the requested number of bytes, unless a fatal
+ * error is encountered or the end-of-stream is reached first.
+ *
+ * If the buffer is NULL, data is skipped instead of read. This is effectively
+ * a relative forward seek, but it works even on non-seekable streams.
+ *
+ * \param buf start of buffer to read data into [OUT]
+ * \param len number of bytes to read
+ * \return the number of bytes read or a negative value on error.
+ */
+VLC_API ssize_t stream_Read(stream_t *, void *, size_t) VLC_USED;
+
+/**
+ * Peeks at data from a byte stream.
+ *
+ * This function buffers for the requested number of bytes, waiting if
+ * necessary. Then it stores a pointer to the buffer. Unlike stream_Read()
+ * or stream_Block(), this function does not modify the stream read offset.
+ *
+ * \note
+ * The buffer remains valid until the next read/peek or seek operation on the
+ * same stream. In case of error, the buffer address is undefined.
+ *
+ * \param bufp storage space for the buffer address [OUT]
+ * \param len number of bytes to peek
+ * \return the number of bytes actually available (shorter than requested if
+ * the end-of-stream is reached), or a negative value on error.
+ */
+VLC_API ssize_t stream_Peek(stream_t *, const uint8_t **, size_t) VLC_USED;
+
+/**
+ * Tells the current stream position.
+ *
+ * @return the byte offset from the beginning of the stream (cannot fail)
+ */
+VLC_API uint64_t stream_Tell(const stream_t *) VLC_USED;
+
+/**
+ * Sets the current stream position.
+ *
+ * @param offset byte offset from the beginning of the stream
+ * @return zero on success, a negative value on error
+ */
+VLC_API int stream_Seek(stream_t *, uint64_t offset) VLC_USED;
+
 VLC_API int stream_vaControl( stream_t *s, int i_query, va_list args );
 VLC_API void stream_Delete( stream_t *s );
 VLC_API int stream_Control( stream_t *s, int i_query, ... );
-VLC_API block_t * stream_Block( stream_t *s, int i_size );
-VLC_API block_t * stream_BlockRemaining( stream_t *s, int i_max_size );
+VLC_API block_t * stream_Block( stream_t *s, size_t );
 VLC_API char * stream_ReadLine( stream_t * );
+VLC_API input_item_t *stream_ReadDir( stream_t * );
 
 /**
- * Get the current position in a stream
+ * Low level custom stream creation.
  */
-static inline int64_t stream_Tell( stream_t *s )
-{
-    uint64_t i_pos;
-    stream_Control( s, STREAM_GET_POSITION, &i_pos );
-    if( i_pos >> 62 )
-        return (int64_t)1 << 62;
-    return i_pos;
-}
+VLC_API stream_t *stream_CustomNew(vlc_object_t *, void (*)(stream_t *));
 
 /**
  * Get the size of the stream.
  */
+VLC_USED static inline int stream_GetSize( stream_t *s, uint64_t *size )
+{
+    return stream_Control( s, STREAM_GET_SIZE, size );
+}
+
 static inline int64_t stream_Size( stream_t *s )
 {
     uint64_t i_pos;
-    stream_Control( s, STREAM_GET_SIZE, &i_pos );
+
+    if( stream_GetSize( s, &i_pos ) )
+        return 0;
     if( i_pos >> 62 )
         return (int64_t)1 << 62;
     return i_pos;
-}
-
-static inline int stream_Seek( stream_t *s, uint64_t i_pos )
-{
-    return stream_Control( s, STREAM_SET_POSITION, i_pos );
 }
 
 /**
@@ -222,6 +243,19 @@ VLC_API stream_t * stream_UrlNew(vlc_object_t *p_this, const char *psz_url );
  * @return New stream to use, or NULL if the filter could not be added.
  **/
 VLC_API stream_t* stream_FilterNew( stream_t *p_source, const char *psz_stream_filter );
+
+/**
+ * Default ReadDir implementation for stream Filter. This implementation just
+ * forward the pf_readdir call to the p_source stream.
+ */
+VLC_API input_item_t *stream_FilterDefaultReadDir( stream_t *s );
+
+/**
+ * Sets stream_FilterDefaultReadDir as the pf_readdir callback for this stream filter
+ */
+#define stream_FilterSetDefaultReadDir(p_stream) \
+    p_stream->pf_readdir = stream_FilterDefaultReadDir;
+
 /**
  * @}
  */

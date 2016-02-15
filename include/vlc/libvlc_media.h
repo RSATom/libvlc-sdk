@@ -2,7 +2,7 @@
  * libvlc_media.h:  libvlc external API
  *****************************************************************************
  * Copyright (C) 1998-2009 VLC authors and VideoLAN
- * $Id: 948230a3f17569091b982038ec2c66b48e1a4398 $
+ * $Id: 262a9368b2e033f7264f89e0b07609773ce0925b $
  *
  * Authors: Clément Stenac <zorglub@videolan.org>
  *          Jean-Paul Saman <jpsaman@videolan.org>
@@ -23,11 +23,6 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-/**
- * \file
- * This file defines libvlc_media external API
- */
-
 #ifndef VLC_LIBVLC_MEDIA_H
 #define VLC_LIBVLC_MEDIA_H 1
 
@@ -40,6 +35,8 @@ extern "C" {
  * @ref libvlc_media_t is an abstract representation of a playable media.
  * It consists of a media location and various optional meta data.
  * @{
+ * \file
+ * LibVLC media item/descriptor external API
  */
 
 typedef struct libvlc_media_t libvlc_media_t;
@@ -73,7 +70,10 @@ typedef enum libvlc_meta_t {
     libvlc_meta_Season,
     libvlc_meta_Episode,
     libvlc_meta_ShowName,
-    libvlc_meta_Actors
+    libvlc_meta_Actors,
+    libvlc_meta_AlbumArtist,
+    libvlc_meta_DiscNumber,
+    libvlc_meta_DiscTotal
     /* Add new meta types HERE */
 } libvlc_meta_t;
 
@@ -221,6 +221,109 @@ typedef struct libvlc_media_track_t
 
 } libvlc_media_track_t;
 
+/** defgroup libvlc_media_type LibVLC media type
+ * \ingroup libvlc_media
+ * @{
+ */
+
+/**
+ * Media type
+ *
+ * \see libvlc_media_get_type
+ */
+typedef enum libvlc_media_type_t {
+    libvlc_media_type_unknown,
+    libvlc_media_type_file,
+    libvlc_media_type_directory,
+    libvlc_media_type_disc,
+    libvlc_media_type_stream,
+    libvlc_media_type_playlist,
+} libvlc_media_type_t;
+
+/** @}*/
+
+/**
+ * Parse flags used by libvlc_media_parse_with_options()
+ *
+ * \see libvlc_media_parse_with_options
+ */
+typedef enum libvlc_media_parse_flag_t
+{
+    /**
+     * Parse media if it's a local file
+     */
+    libvlc_media_parse_local    = 0x00,
+    /**
+     * Parse media even if it's a network file
+     */
+    libvlc_media_parse_network  = 0x01,
+    /**
+     * Fetch meta and covert art using local resources
+     */
+    libvlc_media_fetch_local    = 0x02,
+    /**
+     * Fetch meta and covert art using network resources
+     */
+    libvlc_media_fetch_network  = 0x04,
+} libvlc_media_parse_flag_t;
+
+/**
+ * Callback prototype to open a custom bitstream input media.
+ *
+ * The same media item can be opened multiple times. Each time, this callback
+ * is invoked. It should allocate and initialize any instance-specific
+ * resources, then store them in *datap. The instance resources can be freed
+ * in the @ref libvlc_media_close_cb callback.
+ *
+ * \param opaque private pointer as passed to libvlc_media_new_callbacks()
+ * \param datap storage space for a private data pointer [OUT]
+ * \param sizep byte length of the bitstream or UINT64_MAX if unknown [OUT]
+ *
+ * \note For convenience, *datap is initially NULL and *sizep is initially 0.
+ *
+ * \return 0 on success, non-zero on error. In case of failure, the other
+ * callbacks will not be invoked and any value stored in *datap and *sizep is
+ * discarded.
+ */
+typedef int (*libvlc_media_open_cb)(void *opaque, void **datap,
+                                    uint64_t *sizep);
+
+/**
+ * Callback prototype to read data from a custom bitstream input media.
+ *
+ * \param opaque private pointer as set by the @ref libvlc_media_open_cb
+ *               callback
+ * \param buf start address of the buffer to read data into
+ * \param len bytes length of the buffer
+ *
+ * \return strictly positive number of bytes read, 0 on end-of-stream,
+ *         or -1 on non-recoverable error
+ *
+ * \note If no data is immediately available, then the callback should sleep.
+ * \warning The application is responsible for avoiding deadlock situations.
+ * In particular, the callback should return an error if playback is stopped;
+ * if it does not return, then libvlc_media_player_stop() will never return.
+ */
+typedef ssize_t (*libvlc_media_read_cb)(void *opaque, unsigned char *buf,
+                                        size_t len);
+
+/**
+ * Callback prototype to seek a custom bitstream input media.
+ *
+ * \param opaque private pointer as set by the @ref libvlc_media_open_cb
+ *               callback
+ * \param offset absolute byte offset to seek to
+ * \return 0 on success, -1 on error.
+ */
+typedef int (*libvlc_media_seek_cb)(void *opaque, uint64_t offset);
+
+/**
+ * Callback prototype to close a custom bitstream input media.
+ *
+ * \param opaque private pointer as set by the @ref libvlc_media_open_cb
+ *               callback
+ */
+typedef void (*libvlc_media_close_cb)(void *opaque);
 
 /**
  * Create a media with a certain given media resource location,
@@ -282,6 +385,39 @@ LIBVLC_API libvlc_media_t *libvlc_media_new_fd(
                                    libvlc_instance_t *p_instance,
                                    int fd );
 
+/**
+ * Create a media with custom callbacks to read the data from.
+ *
+ * \param instance LibVLC instance
+ * \param open_cb callback to open the custom bitstream input media
+ * \param read_cb callback to read data (must not be NULL)
+ * \param seek_cb callback to seek, or NULL if seeking is not supported
+ * \param close_cb callback to close the media, or NULL if unnecessary
+ * \param opaque data pointer for the open callback
+ *
+ * \return the newly created media or NULL on error
+ *
+ * \note If open_cb is NULL, the opaque pointer will be passed to read_cb,
+ * seek_cb and close_cb, and the stream size will be treated as unknown.
+ *
+ * \note The callbacks may be called asynchronously (from another thread).
+ * A single stream instance need not be reentrant. However the open_cb needs to
+ * be reentrant if the media is used by multiple player instances.
+ *
+ * \warning The callbacks may be used until all or any player instances
+ * that were supplied the media item are stopped.
+ *
+ * \see libvlc_media_release
+ *
+ * \version LibVLC 3.0.0 and later.
+ */
+LIBVLC_API libvlc_media_t *libvlc_media_new_callbacks(
+                                   libvlc_instance_t *instance,
+                                   libvlc_media_open_cb open_cb,
+                                   libvlc_media_read_cb read_cb,
+                                   libvlc_media_seek_cb seek_cb,
+                                   libvlc_media_close_cb close_cb,
+                                   void *opaque );
 
 /**
  * Create a media as an empty node with a given name.
@@ -483,7 +619,7 @@ LIBVLC_API libvlc_time_t
 /**
  * Parse a media.
  *
- * This fetches (local) meta data and tracks information.
+ * This fetches (local) art, meta data and tracks information.
  * The method is synchronous.
  *
  * \see libvlc_media_parse_async
@@ -498,7 +634,7 @@ libvlc_media_parse( libvlc_media_t *p_md );
 /**
  * Parse a media.
  *
- * This fetches (local) meta data and tracks information.
+ * This fetches (local) art, meta data and tracks information.
  * The method is the asynchronous of libvlc_media_parse().
  *
  * To track when this is over you can listen to libvlc_MediaParsedChanged
@@ -514,6 +650,34 @@ libvlc_media_parse( libvlc_media_t *p_md );
  */
 LIBVLC_API void
 libvlc_media_parse_async( libvlc_media_t *p_md );
+
+/**
+ * Parse the media asynchronously with options.
+ *
+ * This fetches (local or network) art, meta data and/or tracks information.
+ * This method is the extended version of libvlc_media_parse_async().
+ *
+ * To track when this is over you can listen to libvlc_MediaParsedChanged
+ * event. However if this functions returns an error, you will not receive this
+ * event.
+ *
+ * It uses a flag to specify parse options (see libvlc_media_parse_flag_t). All
+ * these flags can be combined. By default, media is parsed if it's a local
+ * file.
+ *
+ * \see libvlc_MediaParsedChanged
+ * \see libvlc_media_get_meta
+ * \see libvlc_media_tracks_get
+ * \see libvlc_media_parse_flag_t
+ *
+ * \param p_md media descriptor object
+ * \param parse_flag parse options:
+ * \return -1 in case of error, 0 otherwise
+ * \version LibVLC 3.0.0 or later
+ */
+LIBVLC_API int
+libvlc_media_parse_with_options( libvlc_media_t *p_md,
+                                 libvlc_media_parse_flag_t parse_flag );
 
 /**
  * Get Parsed status for media descriptor object.
@@ -587,6 +751,21 @@ LIBVLC_API
 unsigned libvlc_media_tracks_get( libvlc_media_t *p_md,
                                   libvlc_media_track_t ***tracks );
 
+/**
+ * Get codec description from media elementary stream
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * \see libvlc_media_track_t
+ *
+ * \param i_type i_type from libvlc_media_track_t
+ * \param i_codec i_codec or i_original_fourcc from libvlc_media_track_t
+ *
+ * \return codec description
+ */
+LIBVLC_API
+const char *libvlc_media_get_codec_description( libvlc_track_type_t i_type,
+                                                uint32_t i_codec );
 
 /**
  * Release media descriptor's elementary streams description array
@@ -599,6 +778,20 @@ unsigned libvlc_media_tracks_get( libvlc_media_t *p_md,
 LIBVLC_API
 void libvlc_media_tracks_release( libvlc_media_track_t **p_tracks,
                                   unsigned i_count );
+
+/**
+ * Get the media type of the media descriptor object
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * \see libvlc_media_type_t
+ *
+ * \param p_md media descriptor object
+ *
+ * \return media type
+ */
+LIBVLC_API
+libvlc_media_type_t libvlc_media_get_type( libvlc_media_t *p_md );
 
 /** @}*/
 
