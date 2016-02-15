@@ -87,6 +87,7 @@ typedef struct vlc_timer *vlc_timer_t;
 # define VLC_THREAD_PRIORITY_OUTPUT   THREAD_PRIORITY_ABOVE_NORMAL
 # define VLC_THREAD_PRIORITY_HIGHEST  THREAD_PRIORITY_TIME_CRITICAL
 
+#if 0
 static inline int vlc_poll(struct pollfd *fds, unsigned nfds, int timeout)
 {
     int val;
@@ -98,6 +99,7 @@ static inline int vlc_poll(struct pollfd *fds, unsigned nfds, int timeout)
     return val;
 }
 # define poll(u,n,t) vlc_poll(u, n, t)
+#endif
 
 #elif defined (__OS2__)
 # include <errno.h>
